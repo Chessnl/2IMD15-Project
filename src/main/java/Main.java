@@ -1,4 +1,3 @@
-import com.sun.xml.internal.ws.policy.privateutil.PolicyUtils;
 import org.apache.commons.collections.ListUtils;
 import org.apache.spark.SparkConf;
 import org.apache.spark.api.java.JavaPairRDD;
@@ -14,7 +13,7 @@ import java.util.*;
 
 public class Main {
 
-    final static private SimpleDateFormat DATE_FORMAT = new SimpleDateFormat("dd/MM/yyyy HH:mm");
+    final static private SimpleDateFormat DATE_FORMAT = new SimpleDateFormat("MM/dd/yyyy-HH:mm");
 
     final private JavaSparkContext sparkContext;
 
@@ -33,31 +32,28 @@ public class Main {
         return this.sparkContext
                 // load all files specified by path, stores as (path-to-file, file-content)
                 .wholeTextFiles(path + "*")
-
-                // remove path prefix
-                .map(s -> new Tuple2<>(s._1.replaceAll("file:/" + path, ""), s._2))
-
-                // create a new pairs (file-name, line) for each line in file-content
                 .flatMapToPair(s -> {
-                    List<Tuple2<String, String>> newPairs = new LinkedList<>();
-                    for (String line : s._2.split("\n")) {
-                        newPairs.add(new Tuple2<>(s._1, line));
+                    List<Tuple2<String, Tuple6<Date, Double, Double, Double, Double, Integer>>> newPairs = new LinkedList<>();
+                    String stockName = s._1.replaceAll("file:/" + path, "").replaceAll("_NoExpiry.txt", "");
+                    String[] lines = s._2.split("\\r?\\n");
+                    for (String line : lines) {
+                        try {
+                            String[] entries = line.replaceAll("\\s+", "").split(",");
+                            double opening = Double.parseDouble(entries[2]);
+                            double highest = Double.parseDouble(entries[3]);
+                            double lowest = Double.parseDouble(entries[4]);
+                            double closing = Double.parseDouble(entries[5]);
+                            int volume = Integer.parseInt(entries[6]);
+                            Date time = DATE_FORMAT.parse(entries[0].trim() + "-" + entries[1].trim());
+                            newPairs.add(new Tuple2<>(stockName, new Tuple6<>(time, opening, highest, lowest, closing, volume)));
+                        } catch (Exception e) {
+                            // TODO in quite cases things go wrong here.
+                            // I don't know exactly what
+                            // This is something cause by spark and not the parsing itself
+                            // This, as each independent input file does not give any exceptions
+                        }
                     }
                     return newPairs.iterator();
-                })
-
-                // maps each pair into (file-name, (time, opening, highest, lowest, closing, volume)
-                .map(s -> new Tuple2<>(s._1, s._2.replaceAll(" ", "").trim().split(",")))
-                .filter(s -> s._2.length == 7)
-                .mapToPair(s -> {
-                    Date time = DATE_FORMAT.parse(s._2[0] + " " + s._2[1]);
-                    double opening = Double.parseDouble(s._2[2]);
-                    double highest = Double.parseDouble(s._2[3]);
-                    double lowest = Double.parseDouble(s._2[4]);
-                    double closing = Double.parseDouble(s._2[5]);
-                    int volume = Integer.parseInt(s._2[6]);
-                    Tuple6<Date, Double, Double, Double, Double, Integer> data = new Tuple6<>(time, opening, highest, lowest, closing, volume);
-                    return new Tuple2<>(s._1, data);
                 });
     }
 
@@ -108,6 +104,9 @@ public class Main {
                     }
                     return new Tuple2<>(s._1, entries);
                 })
+
+                // only consider stocks which had at least 10 observations
+                .filter(s -> s._2.size() >= 10)
 
                 // adds (when necessary) artificial start and end observations
                 // an artificial start is added when the first observation took place after the first queried date
@@ -192,22 +191,28 @@ public class Main {
         for (Object tuple : output) System.out.println(tuple.toString());
     }
 
+    static List<Date> generateDates(Date start, Date end, Long interval) {
+        LinkedList<Date> dates = new LinkedList<>();
+        Date cur = start;
+        while (cur.before(end)) {
+            dates.add(cur);
+            cur = new Date(cur.getTime() + interval);
+        }
+        dates.add(end);
+
+        return dates;
+    }
+
     public static void main(String[] args) {
         System.setProperty("hadoop.home.dir", "C:/winutils");
-        String path = "C:/Users/s161530/Desktop/Data Engineering/Data 2020/202001_Amsterdam_AALB_NoExpiry";
+        String path = "C:/Users/s161530/Desktop/Data Engineering/Data 2020/202001_";
 
-        List<Date> dates = new ArrayList<>();
+        List<Date> dates = null;
         try {
-            dates.add(DATE_FORMAT.parse("01/02/2020 09:00"));
-            dates.add(DATE_FORMAT.parse("01/02/2020 09:05"));
-            dates.add(DATE_FORMAT.parse("01/02/2020 09:10"));
-            dates.add(DATE_FORMAT.parse("01/02/2020 09:15"));
-            dates.add(DATE_FORMAT.parse("01/02/2020 09:20"));
-            dates.add(DATE_FORMAT.parse("01/02/2020 09:25"));
+            dates = generateDates(DATE_FORMAT.parse("01/01/2020-00:00"), DATE_FORMAT.parse("01/31/2020-23:00"), 3600000L);
         } catch (ParseException e) {
             e.printStackTrace();
         }
-
 
         new Main(path, dates);
     }
