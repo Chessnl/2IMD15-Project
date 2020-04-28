@@ -6,10 +6,11 @@ import scala.Tuple2;
 import scala.Tuple3;
 import scala.Tuple6;
 import scala.Tuple7;
-
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.*;
+import org.math.plot.*;
+import javax.swing.*;
 
 public class Main {
 
@@ -18,12 +19,11 @@ public class Main {
     final private JavaSparkContext sparkContext;
 
     Main(String path, List<Date> dates) {
-
         // set spark context
         SparkConf conf = new SparkConf().setAppName("test_app").setMaster("local[*]");
         sparkContext = new JavaSparkContext(conf);
 
-        print(interpolate(parse(path), dates).collect());
+        plot(interpolate(parse(path), dates).collect());
 
         sparkContext.stop();
     }
@@ -57,6 +57,7 @@ public class Main {
                 });
     }
 
+    /// @TODO function can be cleaned
     private JavaPairRDD<String, List<Tuple3<Date, Double, Double>>> interpolate(JavaPairRDD<String, Tuple6<Date, Double, Double, Double, Double, Integer>> rdd, List<Date> dates) {
 
         if (dates.size() < 2) throw new IllegalArgumentException("dates.size() should be at least 2");
@@ -186,11 +187,37 @@ public class Main {
                 });
     }
 
+    // simple plot function
+    // @TODO currently does not plot dates
+    // @TODO for now only plots price * sales (normalized) + logaritmically scaled
+    private void plot(List<Tuple2<String, List<Tuple3<Date, Double, Double>>>> data) {
+        Plot2DPanel plot = new Plot2DPanel();
+        for (Tuple2<String, List<Tuple3<Date, Double, Double>>> stock : data) {
+            double[] x = new double[stock._2.size()];
+            double[] y = new double[stock._2.size()];
+            double max = Double.MIN_VALUE;
+            for (Tuple3<Date, Double, Double> entry : stock._2) max = Math.max(max, entry._2()*entry._3());
+            int i = 0;
+            for (Tuple3<Date, Double, Double> entry : stock._2) {
+                x[i] = i;
+                y[i] = Math.log(entry._2() * entry._3() / max);
+                i++;
+            }
+            plot.addLinePlot(stock._1, x, y);
+        }
+        plot.addLegend("EAST");
+        JFrame frame = new JFrame();
+        frame.setSize(1000, 600);
+        frame.setContentPane(plot);
+        frame.setVisible(true);
+    }
+    
     // extremely generic print function
     private void print(Collection output) {
         for (Object tuple : output) System.out.println(tuple.toString());
     }
 
+    // @TODO should prepare better dates (i.e. don't provide dates during nighttime
     static List<Date> generateDates(Date start, Date end, Long interval) {
         LinkedList<Date> dates = new LinkedList<>();
         Date cur = start;
@@ -205,7 +232,7 @@ public class Main {
 
     public static void main(String[] args) {
         System.setProperty("hadoop.home.dir", "C:/winutils");
-        String path = "C:/Users/s161530/Desktop/Data Engineering/Data 2020/202001_";
+        String path = "C:/Users/s161530/Desktop/Data Engineering/Data 2020/202001_Amsterdam_"; // Files are prefix-matched
 
         List<Date> dates = null;
         try {

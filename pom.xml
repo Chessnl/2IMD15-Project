@@ -53,6 +53,11 @@
             <artifactId>hadoop-common</artifactId>
             <version>2.7.7</version>
         </dependency>
+        <dependency>
+            <groupId>com.github.yannrichet</groupId>
+            <artifactId>JMathPlot</artifactId>
+            <version>1.0.1</version>
+        </dependency>
     </dependencies>
     <properties>
         <maven.compiler.source>1.8</maven.compiler.source>
