@@ -2,19 +2,36 @@ import org.apache.commons.collections.ListUtils;
 import org.apache.spark.SparkConf;
 import org.apache.spark.api.java.JavaPairRDD;
 import org.apache.spark.api.java.JavaSparkContext;
+import org.jfree.chart.ChartFactory;
+import org.jfree.chart.ChartPanel;
+import org.jfree.chart.JFreeChart;
+import org.jfree.chart.labels.StandardXYToolTipGenerator;
+import org.jfree.chart.plot.PlotOrientation;
+import org.jfree.chart.plot.XYPlot;
+import org.jfree.chart.renderer.xy.XYItemRenderer;
+import org.jfree.chart.renderer.xy.XYLineAndShapeRenderer;
+import org.jfree.data.time.*;
+import org.jfree.data.xy.XYDataset;
+import org.jfree.data.xy.XYSeries;
+import org.jfree.data.xy.XYSeriesCollection;
 import scala.Tuple2;
 import scala.Tuple3;
 import scala.Tuple6;
 import scala.Tuple7;
+
+import java.awt.*;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.*;
+import java.util.List;
+
 import org.math.plot.*;
 import javax.swing.*;
 
 public class Main {
 
     final static private String DATE_FORMAT = "MM/dd/yyyy-HH:mm";
+    final static private String[] variables = {"Date", "Opening", "Highest", "Lowest", "Closing"};
 
     final private JavaSparkContext sparkContext;
 
@@ -48,11 +65,8 @@ public class Main {
                             Date time = format.parse(entries[0].trim() + "-" + entries[1].trim());
                             newPairs.add(new Tuple2<>(stockName, new Tuple6<>(time, opening, highest, lowest, closing, volume)));
                         } catch (Exception e) {
+                            // This should not occur unless the file formatting is incorrect
                             System.out.println("Error");
-                            // TODO in quite cases things go wrong here.
-                            // I don't know exactly what
-                            // This is something cause by spark and not the parsing itself
-                            // This, as each independent input file does not give any exceptions
                         }
                     }
                     return newPairs.iterator();
@@ -193,25 +207,58 @@ public class Main {
     // @TODO currently does not plot dates
     // @TODO for now only plots price * sales (normalized) + logaritmically scaled
     private void plot(List<Tuple2<String, List<Tuple3<Date, Double, Double>>>> data) {
-        Plot2DPanel plot = new Plot2DPanel();
+        // Create Dataset to Plot
+        TimeSeriesCollection dataset = new TimeSeriesCollection();
         for (Tuple2<String, List<Tuple3<Date, Double, Double>>> stock : data) {
             double[] x = new double[stock._2.size()];
             double[] y = new double[stock._2.size()];
             double max = Double.MIN_VALUE;
             for (Tuple3<Date, Double, Double> entry : stock._2) max = Math.max(max, entry._2()*entry._3());
-            int i = 0;
+            TimeSeries series = new TimeSeries(stock._1);
             for (Tuple3<Date, Double, Double> entry : stock._2) {
-                x[i] = i;
-                y[i] = Math.log(entry._2() * entry._3() / max);
-                i++;
+                series.add(new Minute(entry._1()), Math.log(entry._2() * entry._3() / max));
             }
-            plot.addLinePlot(stock._1, x, y);
+            dataset.addSeries(series);
         }
-        plot.addLegend("EAST");
+
+        // Create UI
+        JFreeChart chart = ChartFactory.createTimeSeriesChart(
+                "Data Engineering",
+                "time",
+                "value",
+                dataset,
+                true,
+                true,
+                true
+        );
+        XYPlot plot = chart.getXYPlot();
+        plot.setBackgroundPaint(Color.WHITE);
+
+        XYLineAndShapeRenderer renderer = new XYLineAndShapeRenderer();
+        // Lines with dots
+        renderer.setSeriesLinesVisible(0, true);
+        // Tooltip for dots
+        renderer.setDefaultToolTipGenerator(new StandardXYToolTipGenerator());
+        // Assign renderer to plot
+        plot.setRenderer(renderer);
+
+        // Create plot
+        ChartPanel chartPanel = new ChartPanel(chart);
+        chartPanel.setMouseWheelEnabled(true);
+        chartPanel.setBorder(BorderFactory.createEmptyBorder(15, 15, 15, 15));
+        chartPanel.setBackground(Color.WHITE);
+        // Tooltip settings
+        chartPanel.setInitialDelay(0);
+        chartPanel.setReshowDelay(0);
+        chartPanel.setDismissDelay(Integer.MAX_VALUE);
+
+        // JFrame
         JFrame frame = new JFrame();
-        frame.setSize(1000, 600);
-        frame.setContentPane(plot);
+        frame.setSize(1400, 600);
+        frame.add(chartPanel);
+        frame.pack();
         frame.setVisible(true);
+        frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
     }
     
     // extremely generic print function
@@ -239,7 +286,7 @@ public class Main {
         List<Date> dates = null;
         try {
             SimpleDateFormat format = new SimpleDateFormat(DATE_FORMAT);
-            dates = generateDates(format.parse("01/01/2020-00:00"), format.parse("01/31/2020-23:00"), 3600000L);
+            dates = generateDates(format.parse("01/01/2020-00:00"), format.parse("12/31/2020-23:00"), 86400000L);
         } catch (ParseException e) {
             e.printStackTrace();
         }
