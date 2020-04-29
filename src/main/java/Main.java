@@ -1,3 +1,6 @@
+import Correlations.CorrelationFunction;
+import Correlations.MutualInformationCorrelation;
+import Correlations.PearsonCorrelation;
 import org.apache.commons.collections.ListUtils;
 import org.apache.spark.SparkConf;
 import org.apache.spark.api.java.JavaPairRDD;
@@ -18,8 +21,9 @@ public class Main {
 
     final private JavaSparkContext sparkContext;
 
-    // @TODO Implement correlation functions
-    private CorrelationFunction correlationFunction = (first, second) -> { return -1; };
+    // Choose a correlation function
+    private CorrelationFunction correlationFunction = new PearsonCorrelation();
+//    private CorrelationFunction correlationFunction = new MutualInformationCorrelation();
 
     Main(String path, List<Date> dates) {
         // set spark context
