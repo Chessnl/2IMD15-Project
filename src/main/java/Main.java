@@ -18,12 +18,36 @@ public class Main {
 
     final private JavaSparkContext sparkContext;
 
+    // @TODO Implement correlation functions
+    private CorrelationFunction correlationFunction = (first, second) -> { return -1; };
+
     Main(String path, List<Date> dates) {
         // set spark context
         SparkConf conf = new SparkConf().setAppName("test_app").setMaster("local[*]").set("spark.driver.bindAddress", "127.0.0.1");
         sparkContext = new JavaSparkContext(conf);
 
-        plot(interpolate(parse(path), dates).collect());
+        // For each stock, a list of time and value combinations to compare
+        JavaPairRDD<String, List<Tuple2<Date, Double>>> timeSeries = interpolate(parse(path), dates);
+
+        // For debugging, plot the values
+        List<Tuple2<String, List<Tuple2<Date, Double>>>> collected = timeSeries.collect();
+        plot(collected);
+
+        // Compare all two stocks against each other by applying the correlation function on each
+        JavaPairRDD<Tuple2<String, String>, Double> correlations = calculateCorrelations(timeSeries, correlationFunction);
+
+        // Filter out the combinations that have a high correlation only
+        JavaPairRDD<Tuple2<String, String>, Double> highCorrelations = filterHighCorrelations(correlations);
+
+        if (highCorrelations != null) { // TODO When the above are implemented, this can go
+            // Print the high correlations
+            List<Tuple2<Tuple2<String, String>, Double>> highCorrelationsCollected = highCorrelations.collect();
+            for (Tuple2<Tuple2<String, String>, Double> highCorrelationEntry : highCorrelationsCollected) {
+                System.out.println("High correlation of " + highCorrelationEntry._2() + " between "
+                        + highCorrelationEntry._1._1() + " and " + highCorrelationEntry._1._2() + ".");
+            }
+        }
+
 
         sparkContext.stop();
     }
@@ -60,7 +84,7 @@ public class Main {
     }
 
     /// @TODO function can be cleaned
-    private JavaPairRDD<String, List<Tuple3<Date, Double, Double>>> interpolate(JavaPairRDD<String, Tuple6<Date, Double, Double, Double, Double, Integer>> rdd, List<Date> dates) {
+    private JavaPairRDD<String, List<Tuple2<Date, Double>>> interpolate(JavaPairRDD<String, Tuple6<Date, Double, Double, Double, Double, Integer>> rdd, List<Date> dates) {
 
         if (dates.size() < 2) throw new IllegalArgumentException("dates.size() should be at least 2");
 
@@ -186,23 +210,54 @@ public class Main {
                         values.add(new Tuple3<>(date, price, sales));
                     }
                     return new Tuple2<>(s._1, values);
+                })
+
+                .mapToPair(s -> {
+                    List<Tuple2<Date, Double>> timeSeries = new LinkedList<>();
+
+                    for (int i = 1; i < s._2.size(); i ++) {
+                        Tuple3<Date, Double, Double> current = s._2.get(i);
+                        Tuple3<Date, Double, Double> prev = s._2.get(i-1);
+
+                        // Price change as percentage of old price
+                        double rateOfChange = (current._2() - prev._2()) / prev._2();
+
+                        timeSeries.add(new Tuple2<>(current._1(), rateOfChange));
+                    }
+
+                    return new Tuple2<>(s._1, timeSeries);
                 });
+    }
+
+    private JavaPairRDD<Tuple2<String,String>,Double> calculateCorrelations(
+            JavaPairRDD<String,List<Tuple2<Date,Double>>> timeSeries,
+            CorrelationFunction correlationFunction
+    ) {
+        // TODO Compare all two stocks against each other by applying the correlation function on each
+
+        return null;
+    }
+
+    private JavaPairRDD<Tuple2<String,String>,Double> filterHighCorrelations(JavaPairRDD<Tuple2<String,String>,Double> correlations) {
+        // TODO Filter out the combinations that have a high correlation only
+
+        return null;
     }
 
     // simple plot function
     // @TODO currently does not plot dates
-    // @TODO for now only plots price * sales (normalized) + logaritmically scaled
-    private void plot(List<Tuple2<String, List<Tuple3<Date, Double, Double>>>> data) {
+    // @TODO for now only plots priceChangeRate
+    private void plot(List<Tuple2<String, List<Tuple2<Date, Double>>>> data) {
         Plot2DPanel plot = new Plot2DPanel();
-        for (Tuple2<String, List<Tuple3<Date, Double, Double>>> stock : data) {
+        for (Tuple2<String, List<Tuple2<Date, Double>>> stock : data) {
             double[] x = new double[stock._2.size()];
             double[] y = new double[stock._2.size()];
             double max = Double.MIN_VALUE;
-            for (Tuple3<Date, Double, Double> entry : stock._2) max = Math.max(max, entry._2()*entry._3());
+            for (Tuple2<Date, Double> entry : stock._2) max = Math.max(max, entry._2());
             int i = 0;
-            for (Tuple3<Date, Double, Double> entry : stock._2) {
+            for (Tuple2<Date, Double> entry : stock._2) {
                 x[i] = i;
-                y[i] = Math.log(entry._2() * entry._3() / max);
+                y[i] = entry._2();
                 i++;
             }
             plot.addLinePlot(stock._1, x, y);
