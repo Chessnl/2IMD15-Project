@@ -14,13 +14,13 @@ import javax.swing.*;
 
 public class Main {
 
-    final static private SimpleDateFormat DATE_FORMAT = new SimpleDateFormat("MM/dd/yyyy-HH:mm");
+    final static private String DATE_FORMAT = "MM/dd/yyyy-HH:mm";
 
     final private JavaSparkContext sparkContext;
 
     Main(String path, List<Date> dates) {
         // set spark context
-        SparkConf conf = new SparkConf().setAppName("test_app").setMaster("local[*]");
+        SparkConf conf = new SparkConf().setAppName("test_app").setMaster("local[*]").set("spark.driver.bindAddress", "127.0.0.1");
         sparkContext = new JavaSparkContext(conf);
 
         plot(interpolate(parse(path), dates).collect());
@@ -44,9 +44,11 @@ public class Main {
                             double lowest = Double.parseDouble(entries[4]);
                             double closing = Double.parseDouble(entries[5]);
                             int volume = Integer.parseInt(entries[6]);
-                            Date time = DATE_FORMAT.parse(entries[0].trim() + "-" + entries[1].trim());
+                            SimpleDateFormat format = new SimpleDateFormat(DATE_FORMAT);
+                            Date time = format.parse(entries[0].trim() + "-" + entries[1].trim());
                             newPairs.add(new Tuple2<>(stockName, new Tuple6<>(time, opening, highest, lowest, closing, volume)));
                         } catch (Exception e) {
+                            System.out.println("Error");
                             // TODO in quite cases things go wrong here.
                             // I don't know exactly what
                             // This is something cause by spark and not the parsing itself
@@ -231,12 +233,13 @@ public class Main {
     }
 
     public static void main(String[] args) {
-        System.setProperty("hadoop.home.dir", "C:/winutils");
-        String path = "C:/Users/s161530/Desktop/Data Engineering/Data 2020/202001_Amsterdam_"; // Files are prefix-matched
+        System.setProperty("hadoop.home.dir", "E:\\Projects\\University\\2IMD15\\hadoop");
+        String path = "E:/Projects/University/2IMD15/data/202001_Amsterdam_"; // Files are prefix-matched
 
         List<Date> dates = null;
         try {
-            dates = generateDates(DATE_FORMAT.parse("01/01/2020-00:00"), DATE_FORMAT.parse("01/31/2020-23:00"), 3600000L);
+            SimpleDateFormat format = new SimpleDateFormat(DATE_FORMAT);
+            dates = generateDates(format.parse("01/01/2020-00:00"), format.parse("01/31/2020-23:00"), 3600000L);
         } catch (ParseException e) {
             e.printStackTrace();
         }
