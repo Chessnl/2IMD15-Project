@@ -269,9 +269,15 @@ public class Main {
             JavaPairRDD<String,List<Tuple2<Date,Double>>> timeSeries,
             CorrelationFunction correlationFunction
     ) {
-        // TODO Compare all two stocks against each other by applying the correlation function on each
+        // get the cartesian product of timeSeries so we have a Tuple2 for every stock pair
+        return timeSeries.cartesian(timeSeries)
 
-        return null;
+                // filter out the tuples with the same stock twice.
+                .filter(s -> s._1._1 != s._2._1)
+
+                // call the getCorrelation function on the stock pairs.
+                .mapToPair(s -> new Tuple2<>( new Tuple2<>(s._1._1, s._2._1),
+                        correlationFunction.getCorrelation(s._1._2, s._2._2)));
     }
 
     private JavaPairRDD<Tuple2<String,String>,Double> filterHighCorrelations(JavaPairRDD<Tuple2<String,String>,Double> correlations) {
