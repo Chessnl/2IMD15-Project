@@ -1,17 +1,24 @@
 package Correlations;
 
+import javafx.util.Pair;
+import org.apache.spark.sql.execution.columnar.DOUBLE;
 import scala.Tuple2;
 
 import java.util.Date;
 import java.util.List;
+import java.util.Collections;
 
 public class MutualInformationCorrelation implements CorrelationFunction {
 
     @Override
     public double getCorrelation(List<Tuple2<Date, Double>> first, List<Tuple2<Date, Double>> second) {
-        // @TODO Implement
+
+
+
         return 0;
     }
+
+
 
     private double[] createHist1D(List<Tuple2<Date, Double>> data, int nrBuckets, double min, double max){
         double step = (max-min)/nrBuckets;
@@ -51,5 +58,21 @@ public class MutualInformationCorrelation implements CorrelationFunction {
         }
 
         return hist;
+    }
+
+    private Pair<Double, Double> findMinMax(List<Tuple2<Date, Double>> data){
+        double min = Double.MAX_VALUE;
+        double max = Double.MIN_VALUE;
+
+
+        for (Tuple2<Date, Double> point : data){
+            if (point._2 < min){
+                min = point._2;
+            }
+            if (point._2 > max){
+                max = point._2;
+            }
+        }
+        return new Pair<>(min, max);
     }
 }
