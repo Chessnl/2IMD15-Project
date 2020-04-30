@@ -48,7 +48,7 @@ public class Main {
         sparkContext.stop();
     }
 
-    private JavaPairRDD<String, Tuple6<Date, Double, Double, Double, Double, Integer>> parse(String path, String source, Date startDate, Date endDate) {
+    private JavaPairRDD<String, Tuple6<Date, Double, Double, Double, Double, Long>> parse(String path, String source, Date startDate, Date endDate) {
         // Parse start and end yearMonth
         SimpleDateFormat ymf = new SimpleDateFormat("yyyyMM");
         int startYearMonth = Integer.parseInt(ymf.format(startDate));
@@ -68,9 +68,9 @@ public class Main {
                 // load all files specified by path, stores as (path-to-file, file-content)
                 .wholeTextFiles(path + "{" + dates.toString() + "}_" + source + "_*")
                 .flatMapToPair(s -> {
-                    System.out.println("Processing File: " + s._1);
+                    //System.out.println("Processing File: " + s._1);
 
-                    List<Tuple2<String, Tuple6<Date, Double, Double, Double, Double, Integer>>> newPairs = new LinkedList<>();
+                    List<Tuple2<String, Tuple6<Date, Double, Double, Double, Double, Long>>> newPairs = new LinkedList<>();
                     // Extrapolate parameters from filename
                     String[] params = s._1.replaceAll("file:/" + path, "").split("_");
                     String stockName = params[2];
@@ -83,7 +83,7 @@ public class Main {
                     double highest = Double.MIN_VALUE;
                     double lowest = Double.MAX_VALUE;
                     double closing = 0;
-                    int volume = 0;
+                    long volume = 0;
 
                     for (String line : lines) {
                         try {
@@ -112,7 +112,7 @@ public class Main {
                                 highest = Double.parseDouble(entries[3]);
                                 lowest = Double.parseDouble(entries[4]);
                                 closing = Double.parseDouble(entries[5]);
-                                volume = Integer.parseInt(entries[6]);
+                                volume = Long.parseLong(entries[6]);
                                 count = 1;
                             } else {
                                 // Entry at same timestamp
@@ -120,7 +120,7 @@ public class Main {
                                 highest = Math.max(highest, Double.parseDouble(entries[3]));
                                 lowest = Math.min(lowest, Double.parseDouble(entries[4]));
                                 closing += Double.parseDouble(entries[5]);
-                                volume += Integer.parseInt(entries[6]);
+                                volume += Long.parseLong(entries[6]);
                                 count++;
                             }
                         } catch (Exception e) {
@@ -144,7 +144,7 @@ public class Main {
     }
 
     /// @TODO function can be cleaned
-    private JavaPairRDD<String, List<Tuple3<Date, Double, Double>>> interpolate(JavaPairRDD<String, Tuple6<Date, Double, Double, Double, Double, Integer>> rdd, List<Date> dates) {
+    private JavaPairRDD<String, List<Tuple3<Date, Double, Double>>> interpolate(JavaPairRDD<String, Tuple6<Date, Double, Double, Double, Double, Long>> rdd, List<Date> dates) {
 
         if (dates.size() < 2) throw new IllegalArgumentException("dates.size() should be at least 2");
 
@@ -170,21 +170,21 @@ public class Main {
                 // this artifical start node has the same observed values as the first observation
                 // a symmetric definition holds for the artificial end
                 .mapToPair(s -> {
-                    List<Tuple6<Date, Double, Double, Double, Double, Integer>> entries = new LinkedList<>();
+                    List<Tuple6<Date, Double, Double, Double, Double, Long>> entries = new LinkedList<>();
 
-                    Tuple6<Date, Double, Double, Double, Double, Integer> first = s._2.get(0);
+                    Tuple6<Date, Double, Double, Double, Double, Long> first = s._2.get(0);
                     if (first._1().after(dates.get(0))) {
                         Date start_time = new Date(2 * dates.get(0).getTime() - dates.get(1).getTime());
-                        Tuple6<Date, Double, Double, Double, Double, Integer> artificial_start = new Tuple6<>(start_time, first._2(), first._3(), first._4(), first._5(), first._6());
+                        Tuple6<Date, Double, Double, Double, Double, Long> artificial_start = new Tuple6<>(start_time, first._2(), first._3(), first._4(), first._5(), first._6());
                         entries.add(artificial_start);
                     }
 
                     entries.addAll(s._2);
 
-                    Tuple6<Date, Double, Double, Double, Double, Integer> last = s._2.get(s._2.size()-1);
+                    Tuple6<Date, Double, Double, Double, Double, Long> last = s._2.get(s._2.size()-1);
                     if (last._1().before(dates.get(dates.size()-1))) {
                         Date end_time = new Date(2 * dates.get(dates.size()-1).getTime() - dates.get(dates.size()-2).getTime());
-                        Tuple6<Date, Double, Double, Double, Double, Integer> artificial_end = new Tuple6<>(end_time, last._2(), last._3(), last._4(), last._5(), last._6());
+                        Tuple6<Date, Double, Double, Double, Double, Long> artificial_end = new Tuple6<>(end_time, last._2(), last._3(), last._4(), last._5(), last._6());
                         entries.add(artificial_end);
                     }
 
@@ -195,9 +195,9 @@ public class Main {
                 // an exception is made for the first observation, its interval is the time between this and next observation
                 // (file-name, [(time, opening, highest, lowest, closing, volume, interval)]) is the new format
                 .mapToPair(s -> {
-                    LinkedList<Tuple7<Date, Double, Double, Double, Double, Integer, Long>> entries = new LinkedList<>();
+                    LinkedList<Tuple7<Date, Double, Double, Double, Double, Long, Long>> entries = new LinkedList<>();
                     for (int i = 0; i < s._2.size(); i++) {
-                        Tuple6<Date, Double, Double, Double, Double, Integer> entry = s._2.get(i);
+                        Tuple6<Date, Double, Double, Double, Double, Long> entry = s._2.get(i);
                         Long interval = i == 0 ? s._2.get(i+1)._1().getTime() - entry._1().getTime() : entry._1().getTime() - s._2.get(i-1)._1().getTime();
                         entries.add(new Tuple7<>(entry._1(), entry._2(), entry._3(), entry._4(), entry._5(), entry._6(), interval));
                     }
@@ -216,8 +216,8 @@ public class Main {
                     for (Date date : dates) {
                         // takes observations prev and next such that prev.time <= date.time < next.time and there are no observations between prev and next
                         while (date.after(s._2.get(i)._1())) i++;
-                        Tuple7<Date, Double, Double, Double, Double, Integer, Long> prev = s._2.get(i - 1);
-                        Tuple7<Date, Double, Double, Double, Double, Integer, Long> next = s._2.get(i);
+                        Tuple7<Date, Double, Double, Double, Double, Long, Long> prev = s._2.get(i - 1);
+                        Tuple7<Date, Double, Double, Double, Double, Long, Long> next = s._2.get(i);
 
                         // takes interpolation value alpha to correspond how close queried date is to the observations
                         // alpha = 0 implies date.time == prev.time and hence date is at the start of the interval defined by next
