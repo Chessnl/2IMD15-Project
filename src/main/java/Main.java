@@ -276,25 +276,15 @@ public class Main {
             JavaPairRDD<String, List<Tuple2<Date, Double>>> timeSeries,
             CorrelationFunction correlationFunction
     ) {
-        return timeSeries.cartesian(timeSeries) // All combinations
-                .filter(combo -> { // Filter out comparison with itself as well as symmetrically equal pair
-                    Tuple2<String, List<Tuple2<Date, Double>>> first = combo._1;
-                    Tuple2<String, List<Tuple2<Date, Double>>> second = combo._2;
-                    String firstStockLabel = first._1();
-                    String secondStockLabel = second._1();
-                    return firstStockLabel.compareTo(secondStockLabel) > 0;
-                }).mapToPair(combo -> { // Apply the correlation function
-                    Tuple2<String, List<Tuple2<Date, Double>>> first = combo._1;
-                    Tuple2<String, List<Tuple2<Date, Double>>> second = combo._2;
-                    String firstStockLabel = first._1();
-                    String secondStockLabel = second._1();
-                    List<Tuple2<Date, Double>> firstTimeSeries = first._2();
-                    List<Tuple2<Date, Double>> secondTimeSeries = second._2();
+        // get the cartesian product of timeSeries so we have a Tuple2 for every stock pair
+        return timeSeries.cartesian(timeSeries)
 
-                    // Get the correlation
-                    double correlation = correlationFunction.getCorrelation(firstTimeSeries, secondTimeSeries);
-                    return new Tuple2<>(new Tuple2<>(firstStockLabel, secondStockLabel), correlation);
-                });
+                // filter out the tuples with the same stock twice.
+                .filter(s -> s._1._1.compareTo(s._2._1) > 0)
+
+                // call the getCorrelation function on the stock pairs.
+                .mapToPair(s -> new Tuple2<>( new Tuple2<>(s._1._1, s._2._1),
+                        correlationFunction.getCorrelation(s._1._2, s._2._2)));
     }
 
     private JavaPairRDD<Tuple2<String, String>, Double> filterHighCorrelations(JavaPairRDD<Tuple2<String, String>, Double> correlations) {
