@@ -12,4 +12,18 @@ public class MutualInformationCorrelation implements CorrelationFunction {
         // @TODO Implement
         return 0;
     }
+
+    private double[] createHist1D(List<Tuple2<Date, Double>> data, int nrBuckets){
+        double[] hist = new double[nrBuckets];
+        // TODO: Implement
+
+        return hist;
+    }
+
+    private double[][] createHist2D(List<Tuple2<Date, Double>> data, int nrBuckets){
+        double[][] hist = new double[nrBuckets][nrBuckets];
+        // TODO: Implement
+
+        return hist;
+    }
 }
