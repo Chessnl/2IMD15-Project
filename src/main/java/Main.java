@@ -2,6 +2,7 @@ import org.apache.commons.collections.ListUtils;
 import org.apache.spark.SparkConf;
 import org.apache.spark.api.java.JavaPairRDD;
 import org.apache.spark.api.java.JavaSparkContext;
+import org.apache.spark.util.NextIterator;
 import org.jfree.chart.ChartFactory;
 import org.jfree.chart.ChartPanel;
 import org.jfree.chart.JFreeChart;
@@ -28,6 +29,8 @@ import java.util.List;
 import org.math.plot.*;
 import javax.swing.*;
 
+import static java.lang.System.exit;
+
 public class Main {
 
     final static private String DATE_FORMAT = "MM/dd/yyyy-HH:mm";
@@ -35,40 +38,67 @@ public class Main {
 
     final private JavaSparkContext sparkContext;
 
-    Main(String path, List<Date> dates) {
+    Main(String path, String source, List<Date> dates) {
         // set spark context
         SparkConf conf = new SparkConf().setAppName("test_app").setMaster("local[*]").set("spark.driver.bindAddress", "127.0.0.1");
         sparkContext = new JavaSparkContext(conf);
 
-        plot(interpolate(parse(path), dates).collect());
+        plot(interpolate(parse(path, source, dates.get(0), dates.get(dates.size() - 1)), dates).collect());
 
         sparkContext.stop();
     }
 
-    private JavaPairRDD<String, Tuple6<Date, Double, Double, Double, Double, Integer>> parse(String path) {
+    private JavaPairRDD<String, Tuple6<Date, Double, Double, Double, Double, Integer>> parse(String path, String source, Date startDate, Date endDate) {
+        // Parse start and end yearMonth
+        SimpleDateFormat ymf = new SimpleDateFormat("yyyyMM");
+        int startYearMonth = Integer.parseInt(ymf.format(startDate));
+        int endYearMonth = Integer.parseInt(ymf.format(endDate));
+        // Build path filter
+        StringJoiner dates = new StringJoiner(",");
+        int d = startYearMonth;
+        while (d <= endYearMonth) {
+            dates.add(String.valueOf(d));
+            d++;
+            if (d % 13 == 0) {
+                d = (d / 100 + 1) * 100 + 1;
+            }
+        }
+
         return this.sparkContext
                 // load all files specified by path, stores as (path-to-file, file-content)
-                .wholeTextFiles(path + "*")
+                .wholeTextFiles(path + "{" + dates.toString() + "}_" + source + "_*")
                 .flatMapToPair(s -> {
+                    System.out.println("Processing File: " + s._1);
+
                     List<Tuple2<String, Tuple6<Date, Double, Double, Double, Double, Integer>>> newPairs = new LinkedList<>();
-                    String stockName = s._1.replaceAll("file:/" + path, "").replaceAll("_NoExpiry.txt", "");
+                    // Extrapolate parameters from filename
+                    String[] params = s._1.replaceAll("file:/" + path, "").split("_");
+                    String stockName = params[2];
+                    // Process lines in the file
                     String[] lines = s._2.split("\\r?\\n");
                     for (String line : lines) {
                         try {
                             String[] entries = line.replaceAll("\\s+", "").split(",");
+                            // Parse Date
+                            SimpleDateFormat format = new SimpleDateFormat(DATE_FORMAT);
+                            Date time = format.parse(entries[0].trim() + "-" + entries[1].trim());
+                            // Skip entries before startDate whilst end processing if entry date is after endDate
+                            if (time.compareTo(startDate) < 0) continue;
+                            if (time.compareTo(endDate) > 0) break;
+                            // Process rest of the pair only if time is within the desired bound
                             double opening = Double.parseDouble(entries[2]);
                             double highest = Double.parseDouble(entries[3]);
                             double lowest = Double.parseDouble(entries[4]);
                             double closing = Double.parseDouble(entries[5]);
                             int volume = Integer.parseInt(entries[6]);
-                            SimpleDateFormat format = new SimpleDateFormat(DATE_FORMAT);
-                            Date time = format.parse(entries[0].trim() + "-" + entries[1].trim());
+                            // Add pair to results
                             newPairs.add(new Tuple2<>(stockName, new Tuple6<>(time, opening, highest, lowest, closing, volume)));
                         } catch (Exception e) {
                             // This should not occur unless the file formatting is incorrect
                             System.out.println("Error");
                         }
                     }
+
                     return newPairs.iterator();
                 });
     }
@@ -210,13 +240,9 @@ public class Main {
         // Create Dataset to Plot
         TimeSeriesCollection dataset = new TimeSeriesCollection();
         for (Tuple2<String, List<Tuple3<Date, Double, Double>>> stock : data) {
-            double[] x = new double[stock._2.size()];
-            double[] y = new double[stock._2.size()];
-            double max = Double.MIN_VALUE;
-            for (Tuple3<Date, Double, Double> entry : stock._2) max = Math.max(max, entry._2()*entry._3());
             TimeSeries series = new TimeSeries(stock._1);
             for (Tuple3<Date, Double, Double> entry : stock._2) {
-                series.add(new Minute(entry._1()), Math.log(entry._2() * entry._3() / max));
+                series.add(new Minute(entry._1()), entry._2());
             }
             dataset.addSeries(series);
         }
@@ -281,16 +307,17 @@ public class Main {
 
     public static void main(String[] args) {
         System.setProperty("hadoop.home.dir", "E:\\Projects\\University\\2IMD15\\hadoop");
-        String path = "E:/Projects/University/2IMD15/data/202001_Amsterdam_"; // Files are prefix-matched
+        String path = "E:/Projects/University/2IMD15/data/"; // Files are prefix-matched
+        String source = "Amsterdam";
 
         List<Date> dates = null;
         try {
             SimpleDateFormat format = new SimpleDateFormat(DATE_FORMAT);
-            dates = generateDates(format.parse("01/01/2020-00:00"), format.parse("12/31/2020-23:00"), 86400000L);
+            dates = generateDates(format.parse("01/25/2020-00:00"), format.parse("03/12/2020-23:00"), 86400000L);
         } catch (ParseException e) {
             e.printStackTrace();
         }
 
-        new Main(path, dates);
+        new Main(path, source, dates);
     }
 }
