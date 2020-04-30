@@ -60,6 +60,14 @@ public class MutualInformationCorrelation implements CorrelationFunction {
         return hist;
     }
 
+    private Pair<Double, Double> findGlobalMinMax(List<Tuple2<Date, Double>> dataX, List<Tuple2<Date, Double>> dataY){
+        Pair<Double, Double> minMaxX = findMinMax(dataX);
+        Pair<Double, Double> minMaxY = findMinMax(dataY);
+
+        return new Pair<>(  Math.min(minMaxX.getKey(), minMaxY.getKey()),
+                            Math.max(minMaxX.getValue(), minMaxY.getValue()));
+    }
+
     private Pair<Double, Double> findMinMax(List<Tuple2<Date, Double>> data){
         double min = Double.MAX_VALUE;
         double max = Double.MIN_VALUE;
