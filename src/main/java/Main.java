@@ -18,6 +18,8 @@ import scala.Tuple6;
 import scala.Tuple7;
 
 import java.awt.*;
+import java.io.FileInputStream;
+import java.io.IOException;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.*;
@@ -346,8 +348,22 @@ public class Main {
     }
 
     public static void main(String[] args) {
-        System.setProperty("hadoop.home.dir", "C:/winutils");
-        String path = "C:/Users/s161530/Desktop/Data Engineering/Data 2020/"; // Files are prefix-matched
+
+        // Load the config
+        Properties config = new Properties();
+        try {
+            config.load(new FileInputStream("config.properties"));
+        } catch (IOException e) {
+            System.out.println("Please copy config.properties.example to config.properties and fill it in");
+            e.printStackTrace();
+            System.exit(-1);
+        }
+
+        System.out.println("Reading data from " + config.getProperty("data_path"));
+        System.out.println("Using Hadoop directory " + config.getProperty("hadoop_path"));
+
+        System.setProperty("hadoop.home.dir", config.getProperty("hadoop_path"));
+        String path = config.getProperty("data_path"); // Files are prefix-matched
         String source = "Amsterdam";
 
         List<Date> dates = null;
