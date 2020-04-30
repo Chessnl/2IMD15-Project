@@ -1,14 +1,13 @@
 package Correlations;
 
 import javafx.util.Pair;
-import org.apache.spark.sql.execution.columnar.DOUBLE;
+import scala.Serializable;
 import scala.Tuple2;
 
 import java.util.Date;
 import java.util.List;
-import java.util.Collections;
 
-public class MutualInformationCorrelation implements CorrelationFunction {
+public class MutualInformationCorrelation implements CorrelationFunction, Serializable {
 
     @Override
     public double getCorrelation(List<Tuple2<Date, Double>> first, List<Tuple2<Date, Double>> second) {
