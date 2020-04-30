@@ -5,19 +5,13 @@ import org.apache.commons.collections.ListUtils;
 import org.apache.spark.SparkConf;
 import org.apache.spark.api.java.JavaPairRDD;
 import org.apache.spark.api.java.JavaSparkContext;
-import org.apache.spark.util.NextIterator;
 import org.jfree.chart.ChartFactory;
 import org.jfree.chart.ChartPanel;
 import org.jfree.chart.JFreeChart;
 import org.jfree.chart.labels.StandardXYToolTipGenerator;
-import org.jfree.chart.plot.PlotOrientation;
 import org.jfree.chart.plot.XYPlot;
-import org.jfree.chart.renderer.xy.XYItemRenderer;
 import org.jfree.chart.renderer.xy.XYLineAndShapeRenderer;
 import org.jfree.data.time.*;
-import org.jfree.data.xy.XYDataset;
-import org.jfree.data.xy.XYSeries;
-import org.jfree.data.xy.XYSeriesCollection;
 import scala.Tuple2;
 import scala.Tuple3;
 import scala.Tuple6;
@@ -29,10 +23,7 @@ import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.List;
 
-import org.math.plot.*;
 import javax.swing.*;
-
-import static java.lang.System.exit;
 
 public class Main {
 
@@ -126,7 +117,7 @@ public class Main {
                             if (!newTime.equals(time)) {
                                 // New time entry
                                 time = newTime;
-                                if (count > 1) {
+                                if (count > 0) {
                                     // Add the last processed pair to results
                                     newPairs.add(new Tuple2<>(stockName, new Tuple6<>(
                                             time,
