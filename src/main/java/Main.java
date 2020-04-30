@@ -193,9 +193,9 @@ public class Main {
 
                     observations.addAll(s._2);
 
-                    Tuple6<Date, Double, Double, Double, Double, Long> last = s._2.get(s._2.size()-1);
-                    if (last._1().before(dates.get(dates.size()-1))) {
-                        Date end_time = new Date(2 * dates.get(dates.size()-1).getTime() - dates.get(dates.size()-2).getTime());
+                    Tuple6<Date, Double, Double, Double, Double, Long> last = s._2.get(s._2.size() - 1);
+                    if (last._1().before(dates.get(dates.size() - 1))) {
+                        Date end_time = new Date(2 * dates.get(dates.size() - 1).getTime() - dates.get(dates.size() - 2).getTime());
                         Tuple6<Date, Double, Double, Double, Double, Long> artificial_end = new Tuple6<>(end_time, last._2(), last._3(), last._4(), last._5(), last._6());
                         observations.add(artificial_end);
                     }
@@ -206,7 +206,7 @@ public class Main {
                     LinkedList<Tuple7<Date, Double, Double, Double, Double, Long, Long>> entries = new LinkedList<>();
                     for (int i = 0; i < observations.size(); i++) {
                         Tuple6<Date, Double, Double, Double, Double, Long> entry = observations.get(i);
-                        Long interval = i == 0 ? observations.get(i+1)._1().getTime() - entry._1().getTime() : entry._1().getTime() - observations.get(i-1)._1().getTime();
+                        Long interval = i == 0 ? observations.get(i + 1)._1().getTime() - entry._1().getTime() : entry._1().getTime() - observations.get(i - 1)._1().getTime();
                         entries.add(new Tuple7<>(entry._1(), entry._2(), entry._3(), entry._4(), entry._5(), entry._6(), interval));
                     }
                     return new Tuple2<>(s._1, entries);
@@ -236,12 +236,12 @@ public class Main {
                         double alpha = prev_time == next_time ? 1d : (cur_time - prev_time) / (next_time - prev_time);
 
                         // takes the price to be the interpolation between the opening and closing price at the observation of next
-                        double price = (1-alpha) * next._2() + alpha * next._5();
+                        double price = (1 - alpha) * next._2() + alpha * next._5();
 
                         // takes the 'speed of transactions' to be prev.volume / prev.interval at the previous observation
                         // takes the 'speed of transactions' to be next.volume / next.interval at the next observation
                         // interpolates between these two values to form sales
-                        double sales = (1-alpha) * prev._6() / prev._7() + alpha * next._6() / next._7();
+                        double sales = (1 - alpha) * prev._6() / prev._7() + alpha * next._6() / next._7();
 
                         values.add(new Tuple3<>(date, price, sales));
                     }
@@ -251,9 +251,9 @@ public class Main {
                 .mapToPair(s -> {
                     List<Tuple2<Date, Double>> timeSeries = new LinkedList<>();
 
-                    for (int i = 1; i < s._2.size(); i ++) {
+                    for (int i = 1; i < s._2.size(); i++) {
                         Tuple3<Date, Double, Double> current = s._2.get(i);
-                        Tuple3<Date, Double, Double> prev = s._2.get(i-1);
+                        Tuple3<Date, Double, Double> prev = s._2.get(i - 1);
 
                         // Price change as percentage of old price
                         double rateOfChange = (current._2() - prev._2()) / prev._2();
@@ -265,16 +265,39 @@ public class Main {
                 });
     }
 
-    private JavaPairRDD<Tuple2<String,String>,Double> calculateCorrelations(
-            JavaPairRDD<String,List<Tuple2<Date,Double>>> timeSeries,
+    /**
+     * Compare all two stocks against each other by applying the correlation function on each
+     *
+     * @param timeSeries
+     * @param correlationFunction
+     * @return
+     */
+    private JavaPairRDD<Tuple2<String, String>, Double> calculateCorrelations(
+            JavaPairRDD<String, List<Tuple2<Date, Double>>> timeSeries,
             CorrelationFunction correlationFunction
     ) {
-        // TODO Compare all two stocks against each other by applying the correlation function on each
+        return timeSeries.cartesian(timeSeries) // All combinations
+                .filter(combo -> { // Filter out comparison with itself as well as symmetrically equal pair
+                    Tuple2<String, List<Tuple2<Date, Double>>> first = combo._1;
+                    Tuple2<String, List<Tuple2<Date, Double>>> second = combo._2;
+                    String firstStockLabel = first._1();
+                    String secondStockLabel = second._1();
+                    return firstStockLabel.compareTo(secondStockLabel) > 0;
+                }).mapToPair(combo -> { // Apply the correlation function
+                    Tuple2<String, List<Tuple2<Date, Double>>> first = combo._1;
+                    Tuple2<String, List<Tuple2<Date, Double>>> second = combo._2;
+                    String firstStockLabel = first._1();
+                    String secondStockLabel = second._1();
+                    List<Tuple2<Date, Double>> firstTimeSeries = first._2();
+                    List<Tuple2<Date, Double>> secondTimeSeries = second._2();
 
-        return null;
+                    // Get the correlation
+                    double correlation = correlationFunction.getCorrelation(firstTimeSeries, secondTimeSeries);
+                    return new Tuple2<>(new Tuple2<>(firstStockLabel, secondStockLabel), correlation);
+                });
     }
 
-    private JavaPairRDD<Tuple2<String,String>,Double> filterHighCorrelations(JavaPairRDD<Tuple2<String,String>,Double> correlations) {
+    private JavaPairRDD<Tuple2<String, String>, Double> filterHighCorrelations(JavaPairRDD<Tuple2<String, String>, Double> correlations) {
         // TODO Filter out the combinations that have a high correlation only
 
         return null;
