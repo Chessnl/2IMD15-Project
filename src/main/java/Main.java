@@ -64,11 +64,11 @@ public class Main {
             }
         }
 
-
         sparkContext.stop();
     }
 
-    private JavaPairRDD<String, Tuple6<Date, Double, Double, Double, Double, Long>> parse(String path, String source, Date startDate, Date endDate) {
+    // returns for each file (stock-name, [(time, opening, highest, lowest, closing, volume)])
+    private JavaPairRDD<String, List<Tuple6<Date, Double, Double, Double, Double, Long>>> parse(String path, String source, Date startDate, Date endDate) {
         // Parse start and end yearMonth
         SimpleDateFormat ymf = new SimpleDateFormat("yyyyMM");
         int startYearMonth = Integer.parseInt(ymf.format(startDate));
@@ -87,13 +87,10 @@ public class Main {
         return this.sparkContext
                 // load all files specified by path, stores as (path-to-file, file-content)
                 .wholeTextFiles(path + "{" + dates.toString() + "}_" + source + "_*")
-                .flatMapToPair(s -> {
-                    //System.out.println("Processing File: " + s._1);
-
-                    List<Tuple2<String, Tuple6<Date, Double, Double, Double, Double, Long>>> newPairs = new LinkedList<>();
+                .mapToPair(s -> {
+                    List<Tuple6<Date, Double, Double, Double, Double, Long>> observations = new LinkedList<>();
                     // Extrapolate parameters from filename
-                    String[] params = s._1.replaceAll("file:/" + path, "").split("_");
-                    String stockName = params[2];
+                    String stockName = s._1.replaceAll("file:/" + path, "").split("_")[2];
                     // Process lines in the file
                     String[] lines = s._2.split("\\r?\\n");
                     SimpleDateFormat format = new SimpleDateFormat(DATE_FORMAT);
@@ -106,65 +103,58 @@ public class Main {
                     long volume = 0;
 
                     for (String line : lines) {
-                        try {
-                            String[] entries = line.replaceAll("\\s+", "").split(",");
-                            // Parse Date
-                            Date newTime = format.parse(entries[0].trim() + "-" + entries[1].trim());
-                            // Skip entries before startDate whilst end processing if entry date is after endDate
-                            if (newTime.compareTo(startDate) < 0) continue;
-                            if (newTime.compareTo(endDate) > 0) break;
-                            // Process rest of the pair only if time is within the desired bound
-                            if (!newTime.equals(time)) {
-                                // New time entry
-                                time = newTime;
-                                if (count > 0) {
-                                    // Add the last processed pair to results
-                                    newPairs.add(new Tuple2<>(stockName, new Tuple6<>(
-                                            time,
-                                            opening / count, // Take the mean
-                                            highest, lowest,
-                                            closing / count, // Take the mean
-                                            volume
-                                    )));
-                                }
-                                // Parse new pair
-                                opening = Double.parseDouble(entries[2]);
-                                highest = Double.parseDouble(entries[3]);
-                                lowest = Double.parseDouble(entries[4]);
-                                closing = Double.parseDouble(entries[5]);
-                                volume = Long.parseLong(entries[6]);
-                                count = 1;
-                            } else {
-                                // Entry at same timestamp
-                                opening += Double.parseDouble(entries[2]);
-                                highest = Math.max(highest, Double.parseDouble(entries[3]));
-                                lowest = Math.min(lowest, Double.parseDouble(entries[4]));
-                                closing += Double.parseDouble(entries[5]);
-                                volume += Long.parseLong(entries[6]);
-                                count++;
+                        String[] entries = line.replaceAll("\\s+", "").split(",");
+                        // Parse Date
+                        Date newTime = format.parse(entries[0].trim() + "-" + entries[1].trim());
+                        // Skip entries before startDate whilst end processing if entry date is after endDate
+                        if (newTime.compareTo(startDate) < 0) continue;
+                        if (newTime.compareTo(endDate) > 0) break;
+                        // Process rest of the pair only if time is within the desired bound
+                        if (!newTime.equals(time)) {
+                            if (count > 0) {
+                                // Add the last processed pair to results
+                                observations.add(new Tuple6<>(
+                                        time,
+                                        opening / count, // Take the mean
+                                        highest, lowest,
+                                        closing / count, // Take the mean
+                                        volume
+                                ));
                             }
-                        } catch (Exception e) {
-                            // This should not occur unless the file formatting is incorrect
-                            System.out.println("Error");
+                            // Parse new pair
+                            time = newTime;
+                            opening = Double.parseDouble(entries[2]);
+                            highest = Double.parseDouble(entries[3]);
+                            lowest = Double.parseDouble(entries[4]);
+                            closing = Double.parseDouble(entries[5]);
+                            volume = Long.parseLong(entries[6]);
+                            count = 1;
+                        } else {
+                            // Entry at same timestamp
+                            opening += Double.parseDouble(entries[2]);
+                            highest = Math.max(highest, Double.parseDouble(entries[3]));
+                            lowest = Math.min(lowest, Double.parseDouble(entries[4]));
+                            closing += Double.parseDouble(entries[5]);
+                            volume += Long.parseLong(entries[6]);
+                            count++;
                         }
                     }
                     // Add the last Pair
                     if (count > 0) {
-                        newPairs.add(new Tuple2<>(stockName, new Tuple6<>(
+                        observations.add(new Tuple6<>(
                                 time,
                                 opening / count, // Take the mean
                                 highest, lowest,
                                 closing / count, // Take the mean
                                 volume
-                        )));
+                        ));
                     }
 
-                    return newPairs.iterator();
+                    return new Tuple2<>(stockName, observations);
                 });
     }
 
-    /// @TODO function can be cleaned
-    private JavaPairRDD<String, List<Tuple2<Date, Double>>> interpolate(JavaPairRDD<String, Tuple6<Date, Double, Double, Double, Double, Long>> rdd, List<Date> dates) {
+    private JavaPairRDD<String, List<Tuple2<Date, Double>>> interpolate(JavaPairRDD<String, List<Tuple6<Date, Double, Double, Double, Double, Long>>> rdd, List<Date> dates) {
 
         if (dates.size() < 2) throw new IllegalArgumentException("dates.size() should be at least 2");
 
@@ -172,10 +162,9 @@ public class Main {
         dates.sort(Date::compareTo);
 
         return rdd
-                // creates for each file (file-name, [(time, opening, highest, lowest, closing, volume)]) sorted on time
-                .mapToPair(s -> new Tuple2<>(s._1, Collections.singletonList(s._2)))
+                // creates for each stock (stock-name, [(time, opening, highest, lowest, closing, volume)]) sorted on time
                 .reduceByKey(ListUtils::union)
-                .mapToPair(s -> {
+                .map(s -> {
                     s._2.sort(Comparator.comparing(Tuple6::_1));
                     return new Tuple2<>(s._1, s._2);
                 })
@@ -183,42 +172,39 @@ public class Main {
                 // only consider stocks which had at least 10 observations
                 .filter(s -> s._2.size() >= 10)
 
-                // adds (when necessary) artificial start and end observations
-                // an artificial start is added when the first observation took place after the first queried date
-                // in this case, an artificial start node is added at x-time before the first queried date,
-                // where x is the difference between the first and second queried date
-                // this artifical start node has the same observed values as the first observation
-                // a symmetric definition holds for the artificial end
-                .mapToPair(s -> {
-                    List<Tuple6<Date, Double, Double, Double, Double, Long>> entries = new LinkedList<>();
+                // prepares data for interpolation
+                .map(s -> {
+                    // adds (when necessary) artificial start and end observations
+                    // an artificial start is added when the first observation took place after the first queried date
+                    // in this case, an artificial start node is added at x-time before the first queried date,
+                    // where x is the difference between the first and second queried date
+                    // this artifical start node has the same observed values as the first observation
+                    // a symmetric definition holds for the artificial end
+                    List<Tuple6<Date, Double, Double, Double, Double, Long>> observations = new LinkedList<>();
 
                     Tuple6<Date, Double, Double, Double, Double, Long> first = s._2.get(0);
                     if (first._1().after(dates.get(0))) {
                         Date start_time = new Date(2 * dates.get(0).getTime() - dates.get(1).getTime());
                         Tuple6<Date, Double, Double, Double, Double, Long> artificial_start = new Tuple6<>(start_time, first._2(), first._3(), first._4(), first._5(), first._6());
-                        entries.add(artificial_start);
+                        observations.add(artificial_start);
                     }
 
-                    entries.addAll(s._2);
+                    observations.addAll(s._2);
 
                     Tuple6<Date, Double, Double, Double, Double, Long> last = s._2.get(s._2.size()-1);
                     if (last._1().before(dates.get(dates.size()-1))) {
                         Date end_time = new Date(2 * dates.get(dates.size()-1).getTime() - dates.get(dates.size()-2).getTime());
                         Tuple6<Date, Double, Double, Double, Double, Long> artificial_end = new Tuple6<>(end_time, last._2(), last._3(), last._4(), last._5(), last._6());
-                        entries.add(artificial_end);
+                        observations.add(artificial_end);
                     }
 
-                    return new Tuple2<>(s._1, entries);
-                })
-
-                // defines an interval for each observation being the time in milliseconds between this and previous observation
-                // an exception is made for the first observation, its interval is the time between this and next observation
-                // (file-name, [(time, opening, highest, lowest, closing, volume, interval)]) is the new format
-                .mapToPair(s -> {
+                    // defines an interval for each observation being the time in milliseconds between this and previous observation
+                    // an exception is made for the first observation, its interval is the time between this and next observation
+                    // (file-name, [(time, opening, highest, lowest, closing, volume, interval)]) is the new format
                     LinkedList<Tuple7<Date, Double, Double, Double, Double, Long, Long>> entries = new LinkedList<>();
-                    for (int i = 0; i < s._2.size(); i++) {
-                        Tuple6<Date, Double, Double, Double, Double, Long> entry = s._2.get(i);
-                        Long interval = i == 0 ? s._2.get(i+1)._1().getTime() - entry._1().getTime() : entry._1().getTime() - s._2.get(i-1)._1().getTime();
+                    for (int i = 0; i < observations.size(); i++) {
+                        Tuple6<Date, Double, Double, Double, Double, Long> entry = observations.get(i);
+                        Long interval = i == 0 ? observations.get(i+1)._1().getTime() - entry._1().getTime() : entry._1().getTime() - observations.get(i-1)._1().getTime();
                         entries.add(new Tuple7<>(entry._1(), entry._2(), entry._3(), entry._4(), entry._5(), entry._6(), interval));
                     }
                     return new Tuple2<>(s._1, entries);
@@ -345,11 +331,6 @@ public class Main {
         frame.setVisible(true);
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
     }
-    
-    // extremely generic print function
-    private void print(Collection output) {
-        for (Object tuple : output) System.out.println(tuple.toString());
-    }
 
     // @TODO should prepare better dates (i.e. don't provide dates during nighttime
     static List<Date> generateDates(Date start, Date end, Long interval) {
@@ -365,8 +346,8 @@ public class Main {
     }
 
     public static void main(String[] args) {
-        System.setProperty("hadoop.home.dir", "E:\\Projects\\University\\2IMD15\\hadoop");
-        String path = "E:/Projects/University/2IMD15/data/"; // Files are prefix-matched
+        System.setProperty("hadoop.home.dir", "C:/winutils");
+        String path = "C:/Users/s161530/Desktop/Data Engineering/Data 2020/"; // Files are prefix-matched
         String source = "Amsterdam";
 
         List<Date> dates = null;
