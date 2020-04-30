@@ -28,9 +28,27 @@ public class MutualInformationCorrelation implements CorrelationFunction {
         return hist;
     }
 
-    private double[][] createHist2D(List<Tuple2<Date, Double>> data, int nrBuckets, double min, double max){
+    private double[][] createHist2D(List<Tuple2<Date, Double>> dataX, List<Tuple2<Date, Double>> dataY,
+                                    int nrBuckets, double min, double max){
+
+        double step = (max-min)/nrBuckets;
         double[][] hist = new double[nrBuckets][nrBuckets];
-        // TODO: Implement
+        double increment = 1.0 / (dataX.size()*dataY.size());   //X*Y sums add up to one, satisfying probality dist.
+
+        if(!dataX.isEmpty() && !dataY.isEmpty()) {
+
+            // Loop over both timeseries
+            for (Tuple2<Date, Double> pointX: dataX) {
+                for (Tuple2<Date, Double> pointY: dataY){
+
+                    // Determine both buckets
+                    int bucketX = (int) ((pointX._2-min) / step);
+                    int bucketY = (int) ((pointY._2-min) / step);
+
+                    hist[bucketX][bucketY] += increment;
+                }
+            }
+        }
 
         return hist;
     }
