@@ -76,27 +76,67 @@ public class Main {
                     String stockName = params[2];
                     // Process lines in the file
                     String[] lines = s._2.split("\\r?\\n");
+                    SimpleDateFormat format = new SimpleDateFormat(DATE_FORMAT);
+                    int count = 0;
+                    Date time = format.parse("00/00/0000-00:00");
+                    double opening = 0;
+                    double highest = Double.MIN_VALUE;
+                    double lowest = Double.MAX_VALUE;
+                    double closing = 0;
+                    int volume = 0;
+
                     for (String line : lines) {
                         try {
                             String[] entries = line.replaceAll("\\s+", "").split(",");
                             // Parse Date
-                            SimpleDateFormat format = new SimpleDateFormat(DATE_FORMAT);
-                            Date time = format.parse(entries[0].trim() + "-" + entries[1].trim());
+                            Date newTime = format.parse(entries[0].trim() + "-" + entries[1].trim());
                             // Skip entries before startDate whilst end processing if entry date is after endDate
-                            if (time.compareTo(startDate) < 0) continue;
-                            if (time.compareTo(endDate) > 0) break;
+                            if (newTime.compareTo(startDate) < 0) continue;
+                            if (newTime.compareTo(endDate) > 0) break;
                             // Process rest of the pair only if time is within the desired bound
-                            double opening = Double.parseDouble(entries[2]);
-                            double highest = Double.parseDouble(entries[3]);
-                            double lowest = Double.parseDouble(entries[4]);
-                            double closing = Double.parseDouble(entries[5]);
-                            int volume = Integer.parseInt(entries[6]);
-                            // Add pair to results
-                            newPairs.add(new Tuple2<>(stockName, new Tuple6<>(time, opening, highest, lowest, closing, volume)));
+                            if (!newTime.equals(time)) {
+                                // New time entry
+                                time = newTime;
+                                if (count > 1) {
+                                    // Add the last processed pair to results
+                                    newPairs.add(new Tuple2<>(stockName, new Tuple6<>(
+                                            time,
+                                            opening / count, // Take the mean
+                                            highest, lowest,
+                                            closing / count, // Take the mean
+                                            volume
+                                    )));
+                                }
+                                // Parse new pair
+                                opening = Double.parseDouble(entries[2]);
+                                highest = Double.parseDouble(entries[3]);
+                                lowest = Double.parseDouble(entries[4]);
+                                closing = Double.parseDouble(entries[5]);
+                                volume = Integer.parseInt(entries[6]);
+                                count = 1;
+                            } else {
+                                // Entry at same timestamp
+                                opening += Double.parseDouble(entries[2]);
+                                highest = Math.max(highest, Double.parseDouble(entries[3]));
+                                lowest = Math.min(lowest, Double.parseDouble(entries[4]));
+                                closing += Double.parseDouble(entries[5]);
+                                volume += Integer.parseInt(entries[6]);
+                                count++;
+                            }
                         } catch (Exception e) {
                             // This should not occur unless the file formatting is incorrect
                             System.out.println("Error");
                         }
+                    }
+                    // Add the last Pair
+                    if (count > 0) {
+                        newPairs.add(new Tuple2<>(stockName, new Tuple6<>(
+                                time,
+                                opening / count, // Take the mean
+                                highest, lowest,
+                                closing / count, // Take the mean
+                                volume
+                        )));
                     }
 
                     return newPairs.iterator();
@@ -118,38 +158,6 @@ public class Main {
                 .mapToPair(s -> {
                     s._2.sort(Comparator.comparing(Tuple6::_1));
                     return new Tuple2<>(s._1, s._2);
-                })
-
-                // merges entries which share timestamps
-                .mapToPair(s -> {
-                    List<Tuple6<Date, Double, Double, Double, Double, Integer>> entries = new LinkedList<>();
-
-                    // iterates through [(time, opening, highest, lowest, closing, volume)]
-                    for (int i = 0; i < s._2.size();) {
-                        Date current_time = s._2.get(i)._1();   // takes the current timestamp being inspected
-                        int count = 0;                          // number of observed entries with current_time as timestamp
-                        double sum_openings = 0;                // sums all opening values to afterwards take the mean
-                        double highest = Double.MIN_VALUE;      // highest observed highest value
-                        double lowest = Double.MAX_VALUE;       // lowest observed lowest value
-                        double sum_closing = 0;                 // sums all closing values to afterwards take the mean
-                        int sum_volume = 0;
-
-                        // iterates through all entries with timestamp being current_time
-                        // updates all observed values accordingly
-                        while (i < s._2.size() && s._2.get(i)._1().equals(current_time)) {
-                            Tuple6<Date, Double, Double, Double, Double, Integer> entry = s._2.get(i);
-                            count++;
-                            sum_openings += entry._2();
-                            highest = Math.max(highest, entry._3());
-                            lowest = Math.min(lowest, entry._4());
-                            sum_closing += entry._5();
-                            sum_volume += entry._6();
-                            i++;
-                        }
-
-                        entries.add(new Tuple6<>(current_time, sum_openings / count, highest, lowest, sum_closing / count, sum_volume));
-                    }
-                    return new Tuple2<>(s._1, entries);
                 })
 
                 // only consider stocks which had at least 10 observations
