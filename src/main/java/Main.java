@@ -42,6 +42,11 @@ public class Main {
         SparkConf conf = new SparkConf().setAppName("test_app").setMaster("local[*]").set("spark.driver.bindAddress", "127.0.0.1");
         sparkContext = new JavaSparkContext(conf);
 
+        if (dates.size() < 2) throw new IllegalArgumentException("dates.size() should be at least 2");
+
+        // sorting for safety purposes
+        dates.sort(Date::compareTo);
+
         // For each stock, a list of time and value combinations to compare
         JavaPairRDD<String, List<Tuple2<Date, Double>>> timeSeries = interpolate(
                 parse(path, source, dates.get(0), dates.get(dates.size() - 1)), dates
@@ -164,12 +169,6 @@ public class Main {
     }
 
     private JavaPairRDD<String, List<Tuple2<Date, Double>>> interpolate(JavaPairRDD<String, List<Tuple6<Date, Double, Double, Double, Double, Long>>> rdd, List<Date> dates) {
-
-        if (dates.size() < 2) throw new IllegalArgumentException("dates.size() should be at least 2");
-
-        // sorting for safety purposes
-        dates.sort(Date::compareTo);
-
         return rdd
                 // creates for each stock (stock-name, [(time, opening, highest, lowest, closing, volume)]) sorted on time
                 .reduceByKey(ListUtils::union)
@@ -387,10 +386,11 @@ public class Main {
 
         System.out.println("Reading data from " + config.getProperty("data_path"));
         System.out.println("Using Hadoop directory " + config.getProperty("hadoop_path"));
+        System.out.println("Matching with stocks " + config.getProperty("data_match"));
 
         System.setProperty("hadoop.home.dir", config.getProperty("hadoop_path"));
-        String path = config.getProperty("data_path"); // Files are prefix-matched
-        String source = "Amsterdam";
+        String path = config.getProperty("data_path");
+        String source = config.getProperty("data_match"); // only considers stocks that contain `source` as a sub-string
 
         List<Date> dates = null;
         try {
