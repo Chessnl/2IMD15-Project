@@ -290,7 +290,13 @@ public class Main {
     private JavaPairRDD<Tuple2<String, String>, Double> filterHighCorrelations(JavaPairRDD<Tuple2<String, String>, Double> correlations) {
         // TODO Filter out the combinations that have a high correlation only
 
-        return null;
+        return correlations.filter(correlation -> {
+            double value = correlation._2;
+            return true;
+
+            //double threshold = -1.0; // TODO
+            //return value > threshold;
+        });
     }
 
     // simple plot function
