@@ -177,7 +177,7 @@ public class Main {
 
     /**
      * Given a set of (stockName, [(time, opening, highest, lowest, closing, volume)]), calculates an estimate of the prices
-     * at given dates. Returns for each stockName the difference in price dates[i] - dates[i-1].
+     * at given dates. Returns for each stockName the (percentage) change in price between dates[i] and dates[i-1].
      *
      * @param rdd (stockName, [(time, opening, highest, lowest, closing, volume)])
      * @param dates [time]
@@ -258,8 +258,9 @@ public class Main {
                         values.add(new Tuple2<>(date, price));
                     }
 
+                    // calculates the price difference as a percentage
                     List<Tuple2<Date, Double>> data = new LinkedList<>();
-                    for (int j = 1; i < values.size(); i++) {
+                    for (int j = 1; j < values.size(); j++) {
                         Tuple2<Date, Double> current = values.get(j);
                         Tuple2<Date, Double> prev = values.get(j - 1);
 
