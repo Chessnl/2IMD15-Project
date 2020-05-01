@@ -105,6 +105,8 @@ public class Main {
                     long volume = 0;
 
                     for (String line : lines) {
+                        if (line.isEmpty()) continue;
+
                         String[] entries = line.replaceAll("\\s+", "").split(",");
                         // Parse Date
                         Date newTime = format.parse(entries[0].trim() + "-" + entries[1].trim());
@@ -129,7 +131,12 @@ public class Main {
                             highest = Double.parseDouble(entries[3]);
                             lowest = Double.parseDouble(entries[4]);
                             closing = Double.parseDouble(entries[5]);
-                            volume = Long.parseLong(entries[6]);
+                            if (entries[6].contains("E")) {
+                                String[] components = entries[6].split("E");
+                                volume = (long) (Double.parseDouble(components[0]) * Math.pow(10, Double.parseDouble(components[1])));
+                            } else {
+                                volume = Long.parseLong(entries[6]);
+                            }
                             count = 1;
                         } else {
                             // Entry at same timestamp
@@ -388,7 +395,7 @@ public class Main {
         List<Date> dates = null;
         try {
             SimpleDateFormat format = new SimpleDateFormat(DATE_FORMAT);
-            dates = generateDates(format.parse("01/25/2020-00:00"), format.parse("03/12/2020-23:00"), 86400000L);
+            dates = generateDates(format.parse("01/01/2020-00:00"), format.parse("02/10/2020-00:00"), 86400000L);
         } catch (ParseException e) {
             e.printStackTrace();
         }
