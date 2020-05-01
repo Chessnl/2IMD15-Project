@@ -380,10 +380,11 @@ public class Main {
 
         System.out.println("Reading data from " + config.getProperty("data_path"));
         System.out.println("Using Hadoop directory " + config.getProperty("hadoop_path"));
+        System.out.println("Matching with stocks " + config.getProperty("data_match"));
 
         System.setProperty("hadoop.home.dir", config.getProperty("hadoop_path"));
-        String path = config.getProperty("data_path"); // Files are prefix-matched
-        String source = "Amsterdam";
+        String path = config.getProperty("data_path");
+        String source = config.getProperty("data_match"); // only considers stocks that contain `source` as a sub-string
 
         List<Date> dates = null;
         try {
