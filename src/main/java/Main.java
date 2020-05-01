@@ -48,7 +48,7 @@ public class Main {
         dates.sort(Date::compareTo);
 
         // For each stock, a list of time and value combinations to compare
-        JavaPairRDD<String, List<Tuple2<Date, Double>>> timeSeries = interpolate(
+        JavaPairRDD<String, List<Tuple2<Date, Double>>> timeSeries = prepareData(
                 parse(path, source, dates.get(0), dates.get(dates.size() - 1)), dates
         );
 
@@ -74,31 +74,42 @@ public class Main {
         sparkContext.stop();
     }
 
-    // returns for each file (stock-name, [(time, opening, highest, lowest, closing, volume)])
+    /**
+     * (stockName, [(time, opening, highest, lowest, closing, volume)])
+     *
+     * @param path location of stored data
+     * @param source sub-string of data that is matched with
+     * @param startDate only considers observations after startDate
+     * @param endDate only considers observations before startDate
+     * @return (stockName, [(time, opening, highest, lowest, closing, volume)])
+     */
     private JavaPairRDD<String, List<Tuple6<Date, Double, Double, Double, Double, Long>>> parse(String path, String source, Date startDate, Date endDate) {
         // Parse start and end yearMonth
         SimpleDateFormat ymf = new SimpleDateFormat("yyyyMM");
         int startYearMonth = Integer.parseInt(ymf.format(startDate));
         int endYearMonth = Integer.parseInt(ymf.format(endDate));
+
         // Build path filter
         StringJoiner dates = new StringJoiner(",");
         int d = startYearMonth;
         while (d <= endYearMonth) {
             dates.add(String.valueOf(d));
             d++;
-            if (d % 13 == 0) {
-                d = (d / 100 + 1) * 100 + 1;
-            }
+            if (d % 13 == 0) d = (d / 100 + 1) * 100 + 1;
         }
 
+        // creates for each file (stockName, [(time, opening, highest, lowest, closing, volume)])
         return this.sparkContext
                 // load all files specified by path, stores as (path-to-file, file-content)
                 .wholeTextFiles(path + "{" + dates.toString() + "}_" + source + "_*")
+
+
                 .mapToPair(s -> {
-                    List<Tuple6<Date, Double, Double, Double, Double, Long>> observations = new LinkedList<>();
-                    // Extrapolate parameters from filename
+                    // Obtain stockName from filename
                     String stockName = s._1.replaceAll("file:/" + path, "").split("_")[2];
+
                     // Process lines in the file
+                    List<Tuple6<Date, Double, Double, Double, Double, Long>> observations = new LinkedList<>();
                     String[] lines = s._2.split("\\r?\\n");
                     SimpleDateFormat format = new SimpleDateFormat(DATE_FORMAT);
                     int count = 0;
@@ -109,9 +120,10 @@ public class Main {
                     double closing = 0;
                     long volume = 0;
 
+                    // creates [(time, opening, highest, lowest, closing, volume)] for the input file
+                    // merges observations which share a timestamp
                     for (String line : lines) {
                         if (line.isEmpty()) continue;
-
                         String[] entries = line.replaceAll("\\s+", "").split(",");
                         // Parse Date
                         Date newTime = format.parse(entries[0].trim() + "-" + entries[1].trim());
@@ -163,7 +175,15 @@ public class Main {
                 });
     }
 
-    private JavaPairRDD<String, List<Tuple2<Date, Double>>> interpolate(JavaPairRDD<String, List<Tuple6<Date, Double, Double, Double, Double, Long>>> rdd, List<Date> dates) {
+    /**
+     * Given a set of (stockName, [(time, opening, highest, lowest, closing, volume)]), calculates an estimate of the prices
+     * at given dates. Returns for each stockName the (percentage) change in price between dates[i] and dates[i-1].
+     *
+     * @param rdd (stockName, [(time, opening, highest, lowest, closing, volume)])
+     * @param dates [time]
+     * @return (stockName, [(time, price-difference)])
+     */
+    private JavaPairRDD<String, List<Tuple2<Date, Double>>> prepareData(JavaPairRDD<String, List<Tuple6<Date, Double, Double, Double, Double, Long>>> rdd, List<Date> dates) {
         return rdd
                 // creates for each stock (stock-name, [(time, opening, highest, lowest, closing, volume)]) sorted on time
                 .reduceByKey(ListUtils::union)
@@ -176,7 +196,7 @@ public class Main {
                 .filter(s -> s._2.size() >= 10)
 
                 // prepares data for interpolation
-                .map(s -> {
+                .mapToPair(s -> {
                     // adds (when necessary) artificial start and end observations
                     // an artificial start is added when the first observation took place after the first queried date
                     // in this case, an artificial start node is added at x-time before the first queried date,
@@ -210,23 +230,19 @@ public class Main {
                         Long interval = i == 0 ? observations.get(i + 1)._1().getTime() - entry._1().getTime() : entry._1().getTime() - observations.get(i - 1)._1().getTime();
                         entries.add(new Tuple7<>(entry._1(), entry._2(), entry._3(), entry._4(), entry._5(), entry._6(), interval));
                     }
-                    return new Tuple2<>(s._1, entries);
-                })
 
-                // interpolates to obtain queried dates
-                // returns (file-name, [(time, price, sales)])
-                // every observation has a time from the queried timestamps
-                // price corresponds to the expected price of the stock at this queried point in time
-                // sales corresponds to the 'speed of transactions' taking place at this queried point in time
-                .mapToPair(s -> {
-                    List<Tuple3<Date, Double, Double>> values = new LinkedList<>();
+                    // interpolates to obtain queried dates
+                    // returns (file-name, [(time, price)])
+                    // every observation has a time from the queried timestamps
+                    // price corresponds to the expected price of the stock at this queried point in time
+                    List<Tuple2<Date, Double>> values = new LinkedList<>();
 
                     int i = 0;
                     for (Date date : dates) {
                         // takes observations prev and next such that prev.time <= date.time < next.time and there are no observations between prev and next
-                        while (date.after(s._2.get(i)._1())) i++;
-                        Tuple7<Date, Double, Double, Double, Double, Long, Long> prev = s._2.get(i - 1);
-                        Tuple7<Date, Double, Double, Double, Double, Long, Long> next = s._2.get(i);
+                        while (date.after(entries.get(i)._1())) i++;
+                        Tuple7<Date, Double, Double, Double, Double, Long, Long> prev = entries.get(i - 1);
+                        Tuple7<Date, Double, Double, Double, Double, Long, Long> next = entries.get(i);
 
                         // takes interpolation value alpha to correspond how close queried date is to the observations
                         // alpha = 0 implies date.time == prev.time and hence date is at the start of the interval defined by next
@@ -239,30 +255,22 @@ public class Main {
                         // takes the price to be the interpolation between the opening and closing price at the observation of next
                         double price = (1 - alpha) * next._2() + alpha * next._5();
 
-                        // takes the 'speed of transactions' to be prev.volume / prev.interval at the previous observation
-                        // takes the 'speed of transactions' to be next.volume / next.interval at the next observation
-                        // interpolates between these two values to form sales
-                        double sales = (1 - alpha) * prev._6() / prev._7() + alpha * next._6() / next._7();
-
-                        values.add(new Tuple3<>(date, price, sales));
+                        values.add(new Tuple2<>(date, price));
                     }
-                    return new Tuple2<>(s._1, values);
-                })
 
-                .mapToPair(s -> {
-                    List<Tuple2<Date, Double>> timeSeries = new LinkedList<>();
-
-                    for (int i = 1; i < s._2.size(); i++) {
-                        Tuple3<Date, Double, Double> current = s._2.get(i);
-                        Tuple3<Date, Double, Double> prev = s._2.get(i - 1);
+                    // calculates the price difference as a percentage
+                    List<Tuple2<Date, Double>> data = new LinkedList<>();
+                    for (int j = 1; j < values.size(); j++) {
+                        Tuple2<Date, Double> current = values.get(j);
+                        Tuple2<Date, Double> prev = values.get(j - 1);
 
                         // Price change as percentage of old price
                         double rateOfChange = (current._2() - prev._2()) / prev._2();
 
-                        timeSeries.add(new Tuple2<>(current._1(), rateOfChange));
+                        data.add(new Tuple2<>(current._1(), rateOfChange));
                     }
 
-                    return new Tuple2<>(s._1, timeSeries);
+                    return new Tuple2<>(s._1, data);
                 });
     }
 
@@ -301,8 +309,6 @@ public class Main {
     }
 
     // simple plot function
-    // @TODO currently does not plot dates
-    // @TODO for now only plots price * sales (normalized) + logaritmically scaled
     private void plot(List<Tuple2<String, List<Tuple2<Date, Double>>>> data) {
         // Create Dataset to Plot
         TimeSeriesCollection dataset = new TimeSeriesCollection();
@@ -354,7 +360,8 @@ public class Main {
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
     }
 
-    // @TODO should prepare better dates (i.e. don't provide dates during nighttime
+    // @TODO should prepare better dates
+    // only create times during daytime on workdays
     static List<Date> generateDates(Date start, Date end, Long interval) {
         LinkedList<Date> dates = new LinkedList<>();
         Date cur = start;
