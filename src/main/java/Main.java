@@ -136,12 +136,7 @@ public class Main {
                             highest = Double.parseDouble(entries[3]);
                             lowest = Double.parseDouble(entries[4]);
                             closing = Double.parseDouble(entries[5]);
-                            if (entries[6].contains("E")) {
-                                String[] components = entries[6].split("E");
-                                volume = (long) (Double.parseDouble(components[0]) * Math.pow(10, Double.parseDouble(components[1])));
-                            } else {
-                                volume = Long.parseLong(entries[6]);
-                            }
+                            volume = Double.valueOf(entries[6]).longValue();
                             count = 1;
                         } else {
                             // Entry at same timestamp
