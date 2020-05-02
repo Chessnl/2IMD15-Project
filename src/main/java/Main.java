@@ -101,7 +101,7 @@ public class Main {
         // creates for each file (stockName, [(time, opening, highest, lowest, closing, volume)])
         return this.sparkContext
                 // load all files specified by path, stores as (path-to-file, file-content)
-                .wholeTextFiles(path + "{" + dates.toString() + "}_" + source + "_*")
+                .wholeTextFiles(path + "{" + dates.toString() + "}_" + source + "_*", 16)
 
 
                 .mapToPair(s -> {
