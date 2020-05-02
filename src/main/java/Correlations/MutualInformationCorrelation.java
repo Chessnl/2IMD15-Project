@@ -24,10 +24,9 @@ public class MutualInformationCorrelation implements CorrelationFunction, Serial
         double[][] histXY = new double[nrBuckets][nrBuckets];
 
         // Determine steps
-        double stepX = minMaxX.getKey() / minMaxX.getValue();
-        double stepY = minMaxY.getKey() / minMaxY.getValue();
-        double singleIncr = 1.0/first.size();
-        double doubleIncr = 1.0/(first.size()*second.size());
+        double stepX = (minMaxX.getValue()-minMaxX.getKey())/(nrBuckets-1);
+        double stepY = (minMaxY.getValue()-minMaxY.getKey())/(nrBuckets-1);
+        double increment = 1.0/first.size();
 
         // Prepare for simultaneous looping
         Iterator<Tuple2<Date, Double>> iterX = first.iterator();
@@ -44,9 +43,9 @@ public class MutualInformationCorrelation implements CorrelationFunction, Serial
                 int bucketX = (int) ((xi-minMaxX.getKey()) / stepX);
                 int bucketY = (int) ((yi-minMaxY.getKey()) / stepY);
 
-                histX[bucketX] += singleIncr;
-                histY[bucketY] += singleIncr;
-                histXY[bucketX][bucketY] += doubleIncr;
+                histX[bucketX] += increment;
+                histY[bucketY] += increment;
+                histXY[bucketX][bucketY] += increment;
             }
         }
 
@@ -54,7 +53,10 @@ public class MutualInformationCorrelation implements CorrelationFunction, Serial
         double MI = 0;
         for (int i = 0; i < nrBuckets; i++){
             for (int j = 0; j < nrBuckets; j++){
-                MI += histXY[i][j] * Math.log( (histXY[i][j]) / (histX[i]*histY[j]) );
+                double result = histXY[i][j] * Math.log( (histXY[i][j]) / (histX[i]*histY[j]) );
+                if (!Double.isNaN(result)) {
+                    MI += result;
+                }
             }
         }
 
