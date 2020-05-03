@@ -37,7 +37,7 @@ public class Main {
     private CorrelationFunction correlationFunction = new PearsonCorrelation();
 //    private CorrelationFunction correlationFunction = new MutualInformationCorrelation();
 
-    Main(String path, String source, List<Date> dates) {
+    Main(String path, String source, List<Date> dates, int minPartitions) {
         // set spark context
         SparkConf conf = new SparkConf().setAppName("test_app").setMaster("local[*]").set("spark.driver.bindAddress", "127.0.0.1");
         sparkContext = new JavaSparkContext(conf);
@@ -49,7 +49,7 @@ public class Main {
 
         // For each stock, a list of time and value combinations to compare
         JavaPairRDD<String, List<Tuple2<Date, Double>>> timeSeries = prepareData(
-                parse(path, source, dates.get(0), dates.get(dates.size() - 1)), dates
+                parse(path, source, dates.get(0), dates.get(dates.size() - 1), minPartitions), dates
         );
 
         // For debugging, plot the values
@@ -83,7 +83,7 @@ public class Main {
      * @param endDate only considers observations before startDate
      * @return (stockName, [(time, opening, highest, lowest, closing, volume)])
      */
-    private JavaPairRDD<String, List<Tuple6<Date, Double, Double, Double, Double, Long>>> parse(String path, String source, Date startDate, Date endDate) {
+    private JavaPairRDD<String, List<Tuple6<Date, Double, Double, Double, Double, Long>>> parse(String path, String source, Date startDate, Date endDate, int minPartitions) {
         // Parse start and end yearMonth
         SimpleDateFormat ymf = new SimpleDateFormat("yyyyMM");
         int startYearMonth = Integer.parseInt(ymf.format(startDate));
@@ -101,7 +101,7 @@ public class Main {
         // creates for each file (stockName, [(time, opening, highest, lowest, closing, volume)])
         return this.sparkContext
                 // load all files specified by path, stores as (path-to-file, file-content)
-                .wholeTextFiles(path + "{" + dates.toString() + "}_" + source + "_*", 16)
+                .wholeTextFiles(path + "{" + dates.toString() + "}_" + source + "_*", minPartitions)
 
 
                 .mapToPair(s -> {
@@ -388,10 +388,12 @@ public class Main {
 
         System.out.println("Reading data from " + config.getProperty("data_path"));
         System.out.println("Using Hadoop directory " + config.getProperty("hadoop_path"));
+        System.out.println("Minimum partitions when reading files: " + config.getProperty("min_partitions"));
         System.out.println("Matching with stocks " + config.getProperty("data_match"));
 
         System.setProperty("hadoop.home.dir", config.getProperty("hadoop_path"));
         String path = config.getProperty("data_path");
+        int minPartitions = Integer.parseInt(config.getProperty("min_partitions"));
         String source = config.getProperty("data_match"); // only considers stocks that contain `source` as a sub-string
 
         List<Date> dates = null;
@@ -402,6 +404,6 @@ public class Main {
             e.printStackTrace();
         }
 
-        new Main(path, source, dates);
+        new Main(path, source, dates, minPartitions);
     }
 }
