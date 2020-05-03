@@ -301,10 +301,8 @@ public class Main {
 
         return correlations.filter(correlation -> {
             double value = correlation._2;
-            return true;
-
-            //double threshold = -1.0; // TODO
-            //return value > threshold;
+            double threshold = 0.8; // TODO refine
+            return value > threshold;
         });
     }
 
