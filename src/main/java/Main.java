@@ -12,14 +12,13 @@ import org.jfree.chart.labels.StandardXYToolTipGenerator;
 import org.jfree.chart.plot.XYPlot;
 import org.jfree.chart.renderer.xy.XYLineAndShapeRenderer;
 import org.jfree.data.time.*;
-import scala.Tuple2;
-import scala.Tuple3;
-import scala.Tuple6;
-import scala.Tuple7;
+import scala.*;
 
 import java.awt.*;
 import java.io.FileInputStream;
 import java.io.IOException;
+import java.lang.Double;
+import java.lang.Long;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.*;
@@ -59,8 +58,11 @@ public class Main {
             plot(collected);
         }
 
+        JavaPairRDD<String, Tuple3<List<Tuple2<Date, Double>>, Double, Double>> pearson = preparePearsonCorrelation(timeSeries);
+
         // Compare all two stocks against each other by applying the correlation function on each
-        JavaPairRDD<Tuple2<String, String>, Double> correlations = calculateCorrelations(timeSeries, correlationFunction);
+        //JavaPairRDD<Tuple2<String, String>, Double> correlations = calculateCorrelations(timeSeries, correlationFunction);
+        JavaPairRDD<Tuple2<String, String>, Double> correlations = calculateCorrelationsQuick(pearson);
 
         // Save the output correlation pairs to a file
         correlations.coalesce(1).saveAsTextFile(path + "000000_OUTPUT");
@@ -78,6 +80,60 @@ public class Main {
         }
 
         sparkContext.stop();
+    }
+
+    static  private JavaPairRDD<String, Tuple3<List<Tuple2<Date, Double>>, Double, Double>> preparePearsonCorrelation(JavaPairRDD<String, List<Tuple2<Date, Double>>> input) {
+        return input
+                .mapToPair(s -> {
+                    // Retrieve averages
+                    double avg = getAverage(s._2);
+                    double std = 0.0;
+
+                    for (Tuple2<Date, Double> dateDoubleTuple2 : s._2) {
+                        double i = dateDoubleTuple2._2;
+                        std += Math.pow((i - avg), 2);
+                    }
+
+                    return new Tuple2<>(s._1, new Tuple3<>(s._2, avg, std));
+                });
+    }
+
+    static private JavaPairRDD<Tuple2<String, String>, Double> calculateCorrelationsQuick(
+            JavaPairRDD<String, Tuple3<List<Tuple2<Date, Double>>, Double, Double>> input
+    ) {
+        // get the cartesian product of timeSeries so we have a Tuple2 for every stock pair
+        return input.cartesian(input)
+
+                // filter out the tuples with the same stock twice.
+                .filter(s -> s._1._1.compareTo(s._2._1) > 0)
+
+                // call the getCorrelation function on the stock pairs.
+                .mapToPair(s -> {
+                    double cov = 0;
+
+                    Iterator<Tuple2<Date, Double>> iterX = s._1._2._1().iterator();
+                    Iterator<Tuple2<Date, Double>> iterY = s._2._2._1().iterator();
+
+                    while (iterX.hasNext() && iterY.hasNext()){
+                        double xi = iterX.next()._2;
+                        double yi = iterY.next()._2;
+                        cov += (xi - s._1._2._2()) * (yi - s._2._2._2());
+                    }
+                    double res = cov / (s._1._2._3() * s._2._2._3());
+
+                    return new Tuple2<>( new Tuple2<>(s._1._1, s._2._1), res);
+                });
+    }
+
+    static private double getAverage(List<Tuple2<Date, Double>> data){
+        double sum = 0;
+        if(!data.isEmpty()) {
+            for (Tuple2<Date, Double> point: data) {
+                sum += point._2;
+            }
+            return sum / data.size();
+        }
+        return 0;
     }
 
     /**
