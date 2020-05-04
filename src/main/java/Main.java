@@ -317,9 +317,26 @@ public class Main {
                 // filter out the tuples with the same stock twice.
                 .filter(s -> s._1._1.compareTo(s._2._1) > 0)
 
+                // aggregate into groups
+                .groupByKey()
+
                 // call the getCorrelation function on the stock pairs.
-                .mapToPair(s -> new Tuple2<>(new Tuple2<>(s._1._1, s._2._1),
-                        correlationFunction.getCorrelation(s._1._2, s._2._2)));
+                .flatMapToPair(s -> calculateGroupCorrelations(s._1, s._2, correlationFunction));
+    }
+
+    private static Iterator<Tuple2<Tuple2<String, String>, Double>> calculateGroupCorrelations(Tuple2<String,
+            List<Tuple2<Date, Double>>> mainStock, Iterable<Tuple2<String, List<Tuple2<Date, Double>>>> stockIterator,
+                                                                              CorrelationFunction correlationFunction
+    ) {
+        // create a list with all the results
+        List<Tuple2<Tuple2<String, String>, Double>> result = new LinkedList<>();
+        // match the main stock with all secondary stocks
+        for (Tuple2<String, List<Tuple2<Date, Double>>> secondStock: stockIterator) {
+            // add the result of the correlation function
+            result.add(new Tuple2<>( new Tuple2<>(mainStock._1, secondStock._1),
+                    correlationFunction.getCorrelation(mainStock._2, secondStock._2)));
+        }
+        return result.iterator();
     }
 
     private JavaPairRDD<Tuple2<String, String>, Double> filterHighCorrelations(JavaPairRDD<Tuple2<String, String>, Double> correlations) {
