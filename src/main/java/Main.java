@@ -34,8 +34,8 @@ public class Main {
     private static final boolean DEBUGGING = false;
 
     // Choose a correlation function
-    private CorrelationFunction correlationFunction = new PearsonCorrelation();
-//    private CorrelationFunction correlationFunction = new MutualInformationCorrelation();
+//    private CorrelationFunction correlationFunction = new PearsonCorrelation();
+    private CorrelationFunction MutualInformationFunction = new MutualInformationCorrelation();
 
     Main(String path, String source, List<Date> dates, int minPartitions) {
         // set spark context
@@ -65,7 +65,11 @@ public class Main {
         JavaPairRDD<Tuple2<String, String>, Double> correlations = calculateCorrelationsQuick(pearson);
 
         // Save the output correlation pairs to a file
-        correlations.coalesce(1).saveAsTextFile(path + "000000_OUTPUT");
+        correlations.coalesce(1).saveAsTextFile(path + "000000_PEARSON_OUTPUT");
+
+        JavaPairRDD<Tuple2<String, String>, Double> mutualCorrelations = calculateCorrelations(timeSeries, MutualInformationFunction);
+
+        mutualCorrelations.coalesce(1).saveAsTextFile(path + "000000_MUTUAL_OUTPUT");
 
         if (DEBUGGING) {
             // Filter out the combinations that have a high correlation only
