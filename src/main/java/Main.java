@@ -52,10 +52,6 @@ public class Main {
                 parse(path, source, dates.get(0), dates.get(dates.size() - 1), minPartitions), dates
         );
 
-        // For debugging, plot the values
-        List<Tuple2<String, List<Tuple2<Date, Double>>>> collected = timeSeries.collect();
-        plot(collected);
-
         // Compare all two stocks against each other by applying the correlation function on each
         JavaPairRDD<Tuple2<String, String>, Double> correlations = calculateCorrelations(timeSeries, correlationFunction);
 
