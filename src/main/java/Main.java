@@ -34,7 +34,7 @@ public class Main {
     private static final boolean DEBUGGING = false;
 
     // Choose a correlation function
-//    private CorrelationFunction correlationFunction = new PearsonCorrelation();
+    private CorrelationFunction PearsonCorrelationFunction = new PearsonCorrelation();
     private CorrelationFunction MutualInformationFunction = new MutualInformationCorrelation();
 
     Main(String path, String outputPath, String source, List<Date> dates, String masterNode, int minPartitions) {
@@ -60,8 +60,8 @@ public class Main {
 
         JavaPairRDD<String, Tuple3<List<Tuple2<Date, Double>>, Double, Double>> pearson = preparePearsonCorrelation(timeSeries);
 
-        //JavaPairRDD<Tuple2<String, String>, Double> correlations = calculateCorrelations(timeSeries, correlationFunction);
-        JavaPairRDD<Tuple2<String, String>, Double> correlations = calculateCorrelationsQuick(pearson);
+        JavaPairRDD<Tuple2<String, String>, Double> correlations = calculateCorrelations(timeSeries, PearsonCorrelationFunction);
+//        JavaPairRDD<Tuple2<String, String>, Double> correlations = calculateCorrelationsQuick(pearson);
 
         // Save the output correlation pairs to a file
         correlations.coalesce(1).saveAsTextFile(outputPath + "000000_PEARSON_OUTPUT");
