@@ -175,7 +175,7 @@ public class Main {
                     String stockName = s._1.replaceAll("file:/" + path, "").split("_")[2];
 
                     // Process lines in the file
-                    List<Tuple6<Date, Double, Double, Double, Double, Long>> observations = new LinkedList<>();
+                    List<Tuple6<Date, Double, Double, Double, Double, Long>> observations = new ArrayList<>();
                     String[] lines = s._2.split("\\r?\\n");
                     SimpleDateFormat format = new SimpleDateFormat(DATE_FORMAT);
                     int count = 0;
@@ -267,7 +267,7 @@ public class Main {
                     // returns (file-name, [(time, price)])
                     // every observation has a time from the queried timestamps
                     // price corresponds to the expected price of the stock at this queried point in time
-                    List<Tuple2<Date, Double>> prices = new LinkedList<>();
+                    List<Tuple2<Date, Double>> prices = new ArrayList<>();
 
                     int i = 0;
                     for (Date date : dates) {
