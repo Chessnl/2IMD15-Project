@@ -201,7 +201,7 @@ public class Main {
                 // only consider stocks which had at least 10 observations
                 .filter(s -> s._2.size() >= 10)
 
-                // prepares data for interpolation
+                // interpolates data
                 .mapToPair(s -> {
                     // interpolates to obtain queried dates
                     // returns (file-name, [(time, price)])
@@ -236,20 +236,7 @@ public class Main {
                             prices.add(new Tuple2<>(date, price));
                         }
                     }
-
-                    // calculates the price difference as a percentage
-                    List<Tuple2<Date, Double>> change = new LinkedList<>();
-                    for (int j = 1; j < prices.size(); j++) {
-                        Tuple2<Date, Double> current = prices.get(j);
-                        Tuple2<Date, Double> prev = prices.get(j - 1);
-
-                        // Price change as percentage of old price
-                        double rateOfChange = (current._2() - prev._2()) / prev._2();
-
-                        change.add(new Tuple2<>(current._1(), rateOfChange));
-                    }
-
-                    return new Tuple2<>(s._1, change);
+                    return new Tuple2<>(s._1, prices);
                 });
     }
 
