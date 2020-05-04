@@ -76,7 +76,7 @@ public class Main {
         sparkContext.stop();
     }
 
-    private JavaPairRDD<String, Tuple3<List<Tuple2<Date, Double>>, Double, Double>> preparePearsonCorrelation(JavaPairRDD<String, List<Tuple2<Date, Double>>> input) {
+    static  private JavaPairRDD<String, Tuple3<List<Tuple2<Date, Double>>, Double, Double>> preparePearsonCorrelation(JavaPairRDD<String, List<Tuple2<Date, Double>>> input) {
         return input
                 .mapToPair(s -> {
                     // Retrieve averages
@@ -92,7 +92,7 @@ public class Main {
                 });
     }
 
-    private JavaPairRDD<Tuple2<String, String>, Double> calculateCorrelationsQuick(
+    static private JavaPairRDD<Tuple2<String, String>, Double> calculateCorrelationsQuick(
             JavaPairRDD<String, Tuple3<List<Tuple2<Date, Double>>, Double, Double>> input
     ) {
         // get the cartesian product of timeSeries so we have a Tuple2 for every stock pair
@@ -119,7 +119,7 @@ public class Main {
                 });
     }
 
-    private double getAverage(List<Tuple2<Date, Double>> data){
+    static private double getAverage(List<Tuple2<Date, Double>> data){
         double sum = 0;
         if(!data.isEmpty()) {
             for (Tuple2<Date, Double> point: data) {
