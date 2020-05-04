@@ -53,9 +53,9 @@ public class Main {
                 parse(path, source, dates.get(0), dates.get(dates.size() - 1), minPartitions), dates
         );
 
-        // For debugging, plot the values
         if (DEBUGGING) {
-           List<Tuple2<String, List<Tuple2<Date, Double>>>> collected = timeSeries.collect();
+            // For debugging, plot the values
+            List<Tuple2<String, List<Tuple2<Date, Double>>>> collected = timeSeries.collect();
             plot(collected);
         }
 
@@ -83,11 +83,11 @@ public class Main {
     /**
      * (stockName, [(time, opening, highest, lowest, closing, volume)])
      *
-     * @param path location of stored data
-     * @param source sub-string of data that is matched with
+     * @param path      location of stored data
+     * @param source    sub-string of data that is matched with
      * @param startDate only considers observations after startDate
-     * @param endDate only considers observations before startDate
-     * @return (stockName, [(time, opening, highest, lowest, closing, volume)])
+     * @param endDate   only considers observations before startDate
+     * @return (stockName, [ ( time, opening, highest, lowest, closing, volume)])
      */
     private JavaPairRDD<String, List<Tuple6<Date, Double, Double, Double, Double, Long>>> parse(String path, String source, Date startDate, Date endDate, int minPartitions) {
         // Parse start and end yearMonth
@@ -185,9 +185,9 @@ public class Main {
      * Given a set of (stockName, [(time, opening, highest, lowest, closing, volume)]), calculates an estimate of the prices
      * at given dates. Returns for each stockName the (percentage) change in price between dates[i] and dates[i-1].
      *
-     * @param rdd (stockName, [(time, opening, highest, lowest, closing, volume)])
+     * @param rdd   (stockName, [(time, opening, highest, lowest, closing, volume)])
      * @param dates [time]
-     * @return (stockName, [(time, price-difference)])
+     * @return (stockName, [ ( time, price - difference)])
      */
     private JavaPairRDD<String, List<Tuple2<Date, Double>>> prepareData(JavaPairRDD<String, List<Tuple6<Date, Double, Double, Double, Double, Long>>> rdd, List<Date> dates) {
         return rdd
@@ -298,7 +298,7 @@ public class Main {
                 .filter(s -> s._1._1.compareTo(s._2._1) > 0)
 
                 // call the getCorrelation function on the stock pairs.
-                .mapToPair(s -> new Tuple2<>( new Tuple2<>(s._1._1, s._2._1),
+                .mapToPair(s -> new Tuple2<>(new Tuple2<>(s._1._1, s._2._1),
                         correlationFunction.getCorrelation(s._1._2, s._2._2)));
     }
 
