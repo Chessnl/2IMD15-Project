@@ -197,80 +197,53 @@ public class Main {
 
                 // prepares data for interpolation
                 .mapToPair(s -> {
-                    // adds (when necessary) artificial start and end observations
-                    // an artificial start is added when the first observation took place after the first queried date
-                    // in this case, an artificial start node is added at x-time before the first queried date,
-                    // where x is the difference between the first and second queried date
-                    // this artifical start node has the same observed values as the first observation
-                    // a symmetric definition holds for the artificial end
-                    List<Tuple6<Date, Double, Double, Double, Double, Long>> observations = new LinkedList<>();
-
-                    Tuple6<Date, Double, Double, Double, Double, Long> first = s._2.get(0);
-                    if (first._1().after(dates.get(0))) {
-                        Date start_time = new Date(2 * dates.get(0).getTime() - dates.get(1).getTime());
-                        Tuple6<Date, Double, Double, Double, Double, Long> artificial_start = new Tuple6<>(start_time, first._2(), first._3(), first._4(), first._5(), first._6());
-                        observations.add(artificial_start);
-                    }
-
-                    observations.addAll(s._2);
-
-                    Tuple6<Date, Double, Double, Double, Double, Long> last = s._2.get(s._2.size() - 1);
-                    if (last._1().before(dates.get(dates.size() - 1))) {
-                        Date end_time = new Date(2 * dates.get(dates.size() - 1).getTime() - dates.get(dates.size() - 2).getTime());
-                        Tuple6<Date, Double, Double, Double, Double, Long> artificial_end = new Tuple6<>(end_time, last._2(), last._3(), last._4(), last._5(), last._6());
-                        observations.add(artificial_end);
-                    }
-
-                    // defines an interval for each observation being the time in milliseconds between this and previous observation
-                    // an exception is made for the first observation, its interval is the time between this and next observation
-                    // (file-name, [(time, opening, highest, lowest, closing, volume, interval)]) is the new format
-                    LinkedList<Tuple7<Date, Double, Double, Double, Double, Long, Long>> entries = new LinkedList<>();
-                    for (int i = 0; i < observations.size(); i++) {
-                        Tuple6<Date, Double, Double, Double, Double, Long> entry = observations.get(i);
-                        Long interval = i == 0 ? observations.get(i + 1)._1().getTime() - entry._1().getTime() : entry._1().getTime() - observations.get(i - 1)._1().getTime();
-                        entries.add(new Tuple7<>(entry._1(), entry._2(), entry._3(), entry._4(), entry._5(), entry._6(), interval));
-                    }
-
                     // interpolates to obtain queried dates
                     // returns (file-name, [(time, price)])
                     // every observation has a time from the queried timestamps
                     // price corresponds to the expected price of the stock at this queried point in time
-                    List<Tuple2<Date, Double>> values = new LinkedList<>();
+                    List<Tuple2<Date, Double>> prices = new LinkedList<>();
 
                     int i = 0;
                     for (Date date : dates) {
                         // takes observations prev and next such that prev.time <= date.time < next.time and there are no observations between prev and next
-                        while (date.after(entries.get(i)._1())) i++;
-                        Tuple7<Date, Double, Double, Double, Double, Long, Long> prev = entries.get(i - 1);
-                        Tuple7<Date, Double, Double, Double, Double, Long, Long> next = entries.get(i);
+                        while (i < s._2.size() && date.after(s._2.get(i)._1())) i++;
 
-                        // takes interpolation value alpha to correspond how close queried date is to the observations
-                        // alpha = 0 implies date.time == prev.time and hence date is at the start of the interval defined by next
-                        // alpha = 1 implies date.time == next.time (approx) and hence date is at the end of the interval defined by next
-                        long prev_time = prev._1().getTime();
-                        long cur_time = date.getTime();
-                        long next_time = next._1().getTime();
-                        double alpha = prev_time == next_time ? 1d : (cur_time - prev_time) / (next_time - prev_time);
+                        if (i == 0) { // takes first observation if query time is before the first observation
+                            prices.add(new Tuple2<>(date, s._2.get(0)._5()));
+                        } else if (i == s._2.size()) { // take last observation if query time is after the last observation
+                            prices.add(new Tuple2<>(date, s._2.get(s._2.size()-1)._5()));
+                        } else {
+                            Tuple6<Date, Double, Double, Double, Double, Long> prev = s._2.get(i - 1);
+                            Tuple6<Date, Double, Double, Double, Double, Long> next = s._2.get(i);
 
-                        // takes the price to be the interpolation between the opening and closing price at the observation of next
-                        double price = (1 - alpha) * next._2() + alpha * next._5();
+                            // takes interpolation value alpha to correspond how close queried date is to the observations
+                            // alpha = 0 implies date.time == prev.time and hence date is at the start of the interval defined by next
+                            // alpha = 1 implies date.time == next.time (approx) and hence date is at the end of the interval defined by next
+                            long prev_time = prev._1().getTime();
+                            long cur_time = date.getTime();
+                            long next_time = next._1().getTime();
+                            double alpha = prev_time == next_time ? 1d : (cur_time - prev_time) / (next_time - prev_time);
 
-                        values.add(new Tuple2<>(date, price));
+                            // takes the price to be the interpolation between the opening and closing price at the observation of next
+                            double price = (1 - alpha) * next._2() + alpha * next._5();
+
+                            prices.add(new Tuple2<>(date, price));
+                        }
                     }
 
                     // calculates the price difference as a percentage
-                    List<Tuple2<Date, Double>> data = new LinkedList<>();
-                    for (int j = 1; j < values.size(); j++) {
-                        Tuple2<Date, Double> current = values.get(j);
-                        Tuple2<Date, Double> prev = values.get(j - 1);
+                    List<Tuple2<Date, Double>> change = new LinkedList<>();
+                    for (int j = 1; j < prices.size(); j++) {
+                        Tuple2<Date, Double> current = prices.get(j);
+                        Tuple2<Date, Double> prev = prices.get(j - 1);
 
                         // Price change as percentage of old price
                         double rateOfChange = (current._2() - prev._2()) / prev._2();
 
-                        data.add(new Tuple2<>(current._1(), rateOfChange));
+                        change.add(new Tuple2<>(current._1(), rateOfChange));
                     }
 
-                    return new Tuple2<>(s._1, data);
+                    return new Tuple2<>(s._1, change);
                 });
     }
 
@@ -358,14 +331,14 @@ public class Main {
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
     }
 
-    // @TODO should prepare better dates
     // only create times during daytime on workdays
-    static List<Date> generateDates(Date start, Date end, Long interval) {
+    static List<Date> generateDates(Date start, Date end) {
         LinkedList<Date> dates = new LinkedList<>();
         Date cur = start;
         while (cur.before(end)) {
-            dates.add(cur);
-            cur = new Date(cur.getTime() + interval);
+            int weekday = cur.getDay();
+            if (weekday != 0 && weekday != 6) dates.add(cur);
+            cur = new Date(cur.getTime() + 86400000L);
         }
         dates.add(end);
 
@@ -397,7 +370,8 @@ public class Main {
         List<Date> dates = null;
         try {
             SimpleDateFormat format = new SimpleDateFormat(DATE_FORMAT);
-            dates = generateDates(format.parse("01/01/2020-00:00"), format.parse("02/10/2020-00:00"), 86400000L);
+            // 12:00 indicates that every measurement (on workdays) is taken at 12:00
+            dates = generateDates(format.parse("01/01/2020-12:00"), format.parse("02/10/2020-12:00"));
         } catch (ParseException e) {
             e.printStackTrace();
         }
