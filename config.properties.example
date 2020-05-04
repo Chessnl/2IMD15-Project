@@ -1,4 +1,6 @@
 data_path=C:/Eigen Domein/Data/2IMD15 Data Engineering/2020/
 hadoop_path=C:/winutils
+output_path=C:/Eigen Domein/Data/2IMD15 Data Engineering/out/
+master_node=local[*]
 min_partitions=8
 data_match=Amsterdam
