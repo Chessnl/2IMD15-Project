@@ -294,16 +294,18 @@ public class Main {
                 .flatMapToPair(s -> calculateGroupCorrelations(s._1, s._2, correlationFunction));
     }
 
-    private Iterable<Tuple2<Tuple2<String, String>, Double>> calculateGroupCorrelations(Tuple2<String,
+    private static Iterator<Tuple2<Tuple2<String, String>, Double>> calculateGroupCorrelations(Tuple2<String,
             List<Tuple2<Date, Double>>> mainStock, Iterable<Tuple2<String, List<Tuple2<Date, Double>>>> stockIterator,
                                                                               CorrelationFunction correlationFunction
     ) {
+        // create a list with all the results
         List<Tuple2<Tuple2<String, String>, Double>> result = new LinkedList<>();
+        // for each
         for (Tuple2<String, List<Tuple2<Date, Double>>> secondStock: stockIterator) {
             result.add(new Tuple2<>( new Tuple2<>(mainStock._1, secondStock._1),
                     correlationFunction.getCorrelation(mainStock._2, secondStock._2)));
         }
-        return result;
+        return result.iterator();
     }
 
     private JavaPairRDD<Tuple2<String, String>, Double> filterHighCorrelations(JavaPairRDD<Tuple2<String, String>, Double> correlations) {
