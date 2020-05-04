@@ -300,8 +300,9 @@ public class Main {
     ) {
         // create a list with all the results
         List<Tuple2<Tuple2<String, String>, Double>> result = new LinkedList<>();
-        // for each
+        // match the main stock with all secondary stocks
         for (Tuple2<String, List<Tuple2<Date, Double>>> secondStock: stockIterator) {
+            // add the result of the correlation function
             result.add(new Tuple2<>( new Tuple2<>(mainStock._1, secondStock._1),
                     correlationFunction.getCorrelation(mainStock._2, secondStock._2)));
         }
