@@ -32,6 +32,7 @@ public class Main {
     final static private String DATE_FORMAT = "MM/dd/yyyy-HH:mm";
 
     final private JavaSparkContext sparkContext;
+    private static final boolean DEBUGGING = false;
 
     // Choose a correlation function
     private CorrelationFunction correlationFunction = new PearsonCorrelation();
@@ -53,16 +54,21 @@ public class Main {
         );
 
         // For debugging, plot the values
-        List<Tuple2<String, List<Tuple2<Date, Double>>>> collected = timeSeries.collect();
-        plot(collected);
+        if (DEBUGGING) {
+           List<Tuple2<String, List<Tuple2<Date, Double>>>> collected = timeSeries.collect();
+            plot(collected);
+        }
 
         // Compare all two stocks against each other by applying the correlation function on each
         JavaPairRDD<Tuple2<String, String>, Double> correlations = calculateCorrelations(timeSeries, correlationFunction);
 
-        // Filter out the combinations that have a high correlation only
-        JavaPairRDD<Tuple2<String, String>, Double> highCorrelations = filterHighCorrelations(correlations);
+        // Save the output correlation pairs to a file
+        correlations.coalesce(1).saveAsTextFile(path + "000000_OUTPUT");
 
-        if (highCorrelations != null) { // TODO When the above are implemented, this can go
+        if (DEBUGGING) {
+            // Filter out the combinations that have a high correlation only
+            JavaPairRDD<Tuple2<String, String>, Double> highCorrelations = filterHighCorrelations(correlations);
+
             // Print the high correlations
             List<Tuple2<Tuple2<String, String>, Double>> highCorrelationsCollected = highCorrelations.collect();
             for (Tuple2<Tuple2<String, String>, Double> highCorrelationEntry : highCorrelationsCollected) {
