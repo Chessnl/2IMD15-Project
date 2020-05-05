@@ -1,6 +1,5 @@
 package Correlations;
 
-import javafx.util.Pair;
 import scala.Serializable;
 import scala.Tuple2;
 
@@ -15,8 +14,8 @@ public class MutualInformationCorrelation implements CorrelationFunction, Serial
         int nrBuckets = 20;
 
         // Determine min and max
-        Pair<Double, Double> minMaxX = findMinMax(first);
-        Pair<Double, Double> minMaxY = findMinMax(second);
+        Tuple2<Double, Double> minMaxX = findMinMax(first);
+        Tuple2<Double, Double> minMaxY = findMinMax(second);
 
         // Prepare equi-width histograms
         double[] histX = new double[nrBuckets];
@@ -24,8 +23,8 @@ public class MutualInformationCorrelation implements CorrelationFunction, Serial
         double[][] histXY = new double[nrBuckets][nrBuckets];
 
         // Determine steps
-        double stepX = (minMaxX.getValue()-minMaxX.getKey())/(nrBuckets-1);
-        double stepY = (minMaxY.getValue()-minMaxY.getKey())/(nrBuckets-1);
+        double stepX = (minMaxX._2-minMaxX._1)/(nrBuckets-1);
+        double stepY = (minMaxY._2-minMaxY._1)/(nrBuckets-1);
         double increment = 1.0/first.size();
 
         // Prepare for simultaneous looping
@@ -40,8 +39,8 @@ public class MutualInformationCorrelation implements CorrelationFunction, Serial
                 double yi = iterY.next()._2;
 
                 // Determine both buckets
-                int bucketX = (int) ((xi-minMaxX.getKey()) / stepX);
-                int bucketY = (int) ((yi-minMaxY.getKey()) / stepY);
+                int bucketX = (int) ((xi-minMaxX._1) / stepX);
+                int bucketY = (int) ((yi-minMaxY._1) / stepY);
 
                 histX[bucketX] += increment;
                 histY[bucketY] += increment;
@@ -64,7 +63,7 @@ public class MutualInformationCorrelation implements CorrelationFunction, Serial
     }
 
     // Find the minimum and maximum of a single dataset
-    private Pair<Double, Double> findMinMax(List<Tuple2<Date, Double>> data){
+    private Tuple2<Double, Double> findMinMax(List<Tuple2<Date, Double>> data){
         double min = Double.MAX_VALUE;
         double max = Double.MIN_VALUE;
 
@@ -77,6 +76,6 @@ public class MutualInformationCorrelation implements CorrelationFunction, Serial
                 max = point._2;
             }
         }
-        return new Pair<>(min, max);
+        return new Tuple2<>(min, max);
     }
 }
