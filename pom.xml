@@ -48,6 +48,7 @@
                                     <exclude>com.sparkjava:*</exclude>
                                     <exclude>org.apache.spark:*</exclude>
                                     <exclude>org.apache.hadoop:*</exclude>
+                                    <exclude>org.junit.jupiter:*</exclude>
                                 </excludes>
                             </artifactSet>
                         </configuration>
