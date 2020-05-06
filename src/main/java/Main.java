@@ -256,32 +256,38 @@ public class Main {
             JavaPairRDD<String, List<Tuple2<Date, Double>>> timeSeries,
             CorrelationFunction correlationFunction
     ) {
-        // get the cartesian product of timeSeries so we have a Tuple2 for every stock pair
-        return timeSeries.cartesian(timeSeries)
+        JavaPairRDD<Integer, List<Tuple2<String, List<Tuple2<Date, Double>>>>> keyed = timeSeries.mapToPair(s -> {
+            int NUM_SEGMENTS = 10;
+            int hash = s._1.hashCode() % NUM_SEGMENTS;
+            List<Tuple2<String, List<Tuple2<Date, Double>>>> value = new ArrayList<>();
+            value.add(new Tuple2<>(s._1, s._2));
+            return new Tuple2<>(hash, value);
+        });
 
-                // filter out the tuples with the same stock twice.
-                .filter(s -> s._1._1.compareTo(s._2._1) > 0)
+        JavaPairRDD<Integer, List<Tuple2<String, List<Tuple2<Date, Double>>>>> bucketed = keyed.reduceByKey(ListUtils::union);
 
-                // aggregate into groups
-                .groupByKey()
+        return bucketed.cartesian(bucketed) // Cartesian
+                .filter(s -> s._1._1 >= s._2._1) // Only compare buckets on one side of the diagonal (and on, as buckets are not just 1 value)
+                .flatMapToPair(s -> {
+                    List<Tuple2<String, List<Tuple2<Date, Double>>>> bucket1 = s._1._2;
+                    List<Tuple2<String, List<Tuple2<Date, Double>>>> bucket2 = s._2._2;
 
-                // call the getCorrelation function on the stock pairs.
-                .flatMapToPair(s -> calculateGroupCorrelations(s._1, s._2, correlationFunction));
-    }
-
-    private static Iterator<Tuple2<Tuple2<String, String>, Double>> calculateGroupCorrelations(Tuple2<String,
-            List<Tuple2<Date, Double>>> mainStock, Iterable<Tuple2<String, List<Tuple2<Date, Double>>>> stockIterator,
-                                                                              CorrelationFunction correlationFunction
-    ) {
-        // create a list with all the results
-        List<Tuple2<Tuple2<String, String>, Double>> result = new LinkedList<>();
-        // match the main stock with all secondary stocks
-        for (Tuple2<String, List<Tuple2<Date, Double>>> secondStock: stockIterator) {
-            // add the result of the correlation function
-            result.add(new Tuple2<>( new Tuple2<>(mainStock._1, secondStock._1),
-                    correlationFunction.getCorrelation(mainStock._2, secondStock._2)));
-        }
-        return result.iterator();
+                    List<Tuple2<Tuple2<String, String>, Double>> out = new ArrayList<>();
+                    for (Tuple2<String, List<Tuple2<Date, Double>>> stock1 : bucket1) {
+                        for (Tuple2<String, List<Tuple2<Date, Double>>> stock2 : bucket2) {
+                            String stock1Name = stock1._1;
+                            String stock2Name = stock2._1;
+                            if (stock1Name.compareTo(stock2Name) > 0) { // Avoid double compares and compare against itself
+                                Double correlation = correlationFunction.getCorrelation(
+                                        stock1._2,
+                                        stock2._2
+                                );
+                                out.add(new Tuple2<>(new Tuple2<>(stock1Name, stock2Name), correlation));
+                            }
+                        }
+                    }
+                    return out.iterator();
+                });
     }
 
     private JavaPairRDD<Tuple2<String, String>, Double> filterHighCorrelations(JavaPairRDD<Tuple2<String, String>, Double> correlations) {
