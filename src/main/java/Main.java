@@ -37,7 +37,8 @@ public class Main {
     private CorrelationFunction PearsonCorrelationFunction = new PearsonCorrelation();
     private CorrelationFunction MutualInformationFunction = new MutualInformationCorrelation();
 
-    Main(String path, String outputPath, String source, List<Date> dates, String masterNode, int minPartitions) {
+    Main(String path, String outputPath, String source, List<Date> dates, String masterNode,
+         int minPartitions, int numSegments) {
         // set spark context
         SparkConf conf = new SparkConf().setAppName("test_app").setMaster(masterNode).set("spark.driver.bindAddress", "127.0.0.1");
         sparkContext = new JavaSparkContext(conf);
@@ -59,13 +60,15 @@ public class Main {
         }
 
         // compute the PearsonCorrelation Function
-        JavaPairRDD<Tuple2<String, String>, Double> pearsonCorrelations = calculateCorrelations(timeSeries, PearsonCorrelationFunction);
+        JavaPairRDD<Tuple2<String, String>, Double> pearsonCorrelations =
+                calculateCorrelations(timeSeries, PearsonCorrelationFunction, numSegments);
 
         // Save the output correlation pairs to a file
         pearsonCorrelations.coalesce(1).saveAsTextFile(outputPath + "000000_PEARSON_OUTPUT");
 
         // compute the MutualInformation correlation
-        JavaPairRDD<Tuple2<String, String>, Double> mutualCorrelations = calculateCorrelations(timeSeries, MutualInformationFunction);
+        JavaPairRDD<Tuple2<String, String>, Double> mutualCorrelations =
+                calculateCorrelations(timeSeries, MutualInformationFunction, numSegments);
 
         // Save the output correlation pairs to a file
         mutualCorrelations.coalesce(1).saveAsTextFile(outputPath + "000000_MUTUAL_OUTPUT");
@@ -254,11 +257,11 @@ public class Main {
      */
     private JavaPairRDD<Tuple2<String, String>, Double> calculateCorrelations(
             JavaPairRDD<String, List<Tuple2<Date, Double>>> timeSeries,
-            CorrelationFunction correlationFunction
+            CorrelationFunction correlationFunction,
+            int numSegments
     ) {
         JavaPairRDD<Integer, List<Tuple2<String, List<Tuple2<Date, Double>>>>> keyed = timeSeries.mapToPair(s -> {
-            int NUM_SEGMENTS = 10;
-            int hash = s._1.hashCode() % NUM_SEGMENTS;
+            int hash = s._1.hashCode() % numSegments;
             List<Tuple2<String, List<Tuple2<Date, Double>>>> value = new ArrayList<>();
             value.add(new Tuple2<>(s._1, s._2));
             return new Tuple2<>(hash, value);
@@ -384,6 +387,7 @@ public class Main {
         System.out.println("Setting master node to " + config.getProperty("master_node"));
         System.out.println("Minimum partitions when reading files: " + config.getProperty("min_partitions"));
         System.out.println("Matching with stocks " + config.getProperty("data_match"));
+        System.out.println("Using " + config.getProperty("num_segments") + " segments to divide the stocks into");
 
         System.setProperty("hadoop.home.dir", config.getProperty("hadoop_path"));
         String path = config.getProperty("data_path");
@@ -391,6 +395,7 @@ public class Main {
         String masterNode = config.getProperty("master_node");
         int minPartitions = Integer.parseInt(config.getProperty("min_partitions"));
         String source = config.getProperty("data_match"); // only considers stocks that contain `source` as a sub-string
+        int numSegments = Integer.parseInt(config.getProperty("num_segments"));
 
         List<Date> dates = null;
         try {
@@ -401,6 +406,6 @@ public class Main {
             e.printStackTrace();
         }
 
-        new Main(path, outputPath, source, dates, masterNode, minPartitions);
+        new Main(path, outputPath, source, dates, masterNode, minPartitions, numSegments);
     }
 }
