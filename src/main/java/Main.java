@@ -37,7 +37,8 @@ public class Main {
     private CorrelationFunction PearsonCorrelationFunction = new PearsonCorrelation();
     private CorrelationFunction MutualInformationFunction = new MutualInformationCorrelation();
 
-    Main(String path, String outputPath, String source, List<Date> dates, String masterNode, int minPartitions) {
+    Main(String path, String outputPath, String source, List<Date> dates, String masterNode,
+         int minPartitions, int numSegments) {
         // set spark context
         SparkConf conf = new SparkConf().setAppName("test_app").setMaster(masterNode).set("spark.driver.bindAddress", "127.0.0.1");
         sparkContext = new JavaSparkContext(conf);
@@ -59,13 +60,15 @@ public class Main {
         }
 
         // compute the PearsonCorrelation Function
-        JavaPairRDD<Tuple2<String, String>, Double> pearsonCorrelations = calculateCorrelations(timeSeries, PearsonCorrelationFunction);
+        JavaPairRDD<Tuple2<String, String>, Double> pearsonCorrelations =
+                calculateCorrelations(timeSeries, PearsonCorrelationFunction, numSegments);
 
         // Save the output correlation pairs to a file
         pearsonCorrelations.coalesce(1).saveAsTextFile(outputPath + "000000_PEARSON_OUTPUT");
 
         // compute the MutualInformation correlation
-        JavaPairRDD<Tuple2<String, String>, Double> mutualCorrelations = calculateCorrelations(timeSeries, MutualInformationFunction);
+        JavaPairRDD<Tuple2<String, String>, Double> mutualCorrelations =
+                calculateCorrelations(timeSeries, MutualInformationFunction, numSegments);
 
         // Save the output correlation pairs to a file
         mutualCorrelations.coalesce(1).saveAsTextFile(outputPath + "000000_MUTUAL_OUTPUT");
@@ -254,34 +257,40 @@ public class Main {
      */
     private JavaPairRDD<Tuple2<String, String>, Double> calculateCorrelations(
             JavaPairRDD<String, List<Tuple2<Date, Double>>> timeSeries,
-            CorrelationFunction correlationFunction
+            CorrelationFunction correlationFunction,
+            int numSegments
     ) {
-        // get the cartesian product of timeSeries so we have a Tuple2 for every stock pair
-        return timeSeries.cartesian(timeSeries)
+        JavaPairRDD<Integer, List<Tuple2<String, List<Tuple2<Date, Double>>>>> keyed = timeSeries.mapToPair(s -> {
+            int hash = s._1.hashCode() % numSegments;
+            List<Tuple2<String, List<Tuple2<Date, Double>>>> value = new ArrayList<>();
+            value.add(new Tuple2<>(s._1, s._2));
+            return new Tuple2<>(hash, value);
+        });
 
-                // filter out the tuples with the same stock twice.
-                .filter(s -> s._1._1.compareTo(s._2._1) > 0)
+        JavaPairRDD<Integer, List<Tuple2<String, List<Tuple2<Date, Double>>>>> bucketed = keyed.reduceByKey(ListUtils::union);
 
-                // aggregate into groups
-                .groupByKey()
+        return bucketed.cartesian(bucketed) // Cartesian
+                .filter(s -> s._1._1 >= s._2._1) // Only compare buckets on one side of the diagonal (and on, as buckets are not just 1 value)
+                .flatMapToPair(s -> {
+                    List<Tuple2<String, List<Tuple2<Date, Double>>>> bucket1 = s._1._2;
+                    List<Tuple2<String, List<Tuple2<Date, Double>>>> bucket2 = s._2._2;
 
-                // call the getCorrelation function on the stock pairs.
-                .flatMapToPair(s -> calculateGroupCorrelations(s._1, s._2, correlationFunction));
-    }
-
-    private static Iterator<Tuple2<Tuple2<String, String>, Double>> calculateGroupCorrelations(Tuple2<String,
-            List<Tuple2<Date, Double>>> mainStock, Iterable<Tuple2<String, List<Tuple2<Date, Double>>>> stockIterator,
-                                                                              CorrelationFunction correlationFunction
-    ) {
-        // create a list with all the results
-        List<Tuple2<Tuple2<String, String>, Double>> result = new LinkedList<>();
-        // match the main stock with all secondary stocks
-        for (Tuple2<String, List<Tuple2<Date, Double>>> secondStock: stockIterator) {
-            // add the result of the correlation function
-            result.add(new Tuple2<>( new Tuple2<>(mainStock._1, secondStock._1),
-                    correlationFunction.getCorrelation(mainStock._2, secondStock._2)));
-        }
-        return result.iterator();
+                    List<Tuple2<Tuple2<String, String>, Double>> out = new ArrayList<>();
+                    for (Tuple2<String, List<Tuple2<Date, Double>>> stock1 : bucket1) {
+                        for (Tuple2<String, List<Tuple2<Date, Double>>> stock2 : bucket2) {
+                            String stock1Name = stock1._1;
+                            String stock2Name = stock2._1;
+                            if (stock1Name.compareTo(stock2Name) > 0) { // Avoid double compares and compare against itself
+                                Double correlation = correlationFunction.getCorrelation(
+                                        stock1._2,
+                                        stock2._2
+                                );
+                                out.add(new Tuple2<>(new Tuple2<>(stock1Name, stock2Name), correlation));
+                            }
+                        }
+                    }
+                    return out.iterator();
+                });
     }
 
     private JavaPairRDD<Tuple2<String, String>, Double> filterHighCorrelations(JavaPairRDD<Tuple2<String, String>, Double> correlations) {
@@ -378,6 +387,7 @@ public class Main {
         System.out.println("Setting master node to " + config.getProperty("master_node"));
         System.out.println("Minimum partitions when reading files: " + config.getProperty("min_partitions"));
         System.out.println("Matching with stocks " + config.getProperty("data_match"));
+        System.out.println("Using " + config.getProperty("num_segments") + " segments to divide the stocks into");
 
         System.setProperty("hadoop.home.dir", config.getProperty("hadoop_path"));
         String path = config.getProperty("data_path");
@@ -385,6 +395,7 @@ public class Main {
         String masterNode = config.getProperty("master_node");
         int minPartitions = Integer.parseInt(config.getProperty("min_partitions"));
         String source = config.getProperty("data_match"); // only considers stocks that contain `source` as a sub-string
+        int numSegments = Integer.parseInt(config.getProperty("num_segments"));
 
         List<Date> dates = null;
         try {
@@ -395,6 +406,6 @@ public class Main {
             e.printStackTrace();
         }
 
-        new Main(path, outputPath, source, dates, masterNode, minPartitions);
+        new Main(path, outputPath, source, dates, masterNode, minPartitions, numSegments);
     }
 }
