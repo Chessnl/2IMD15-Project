@@ -386,22 +386,27 @@ public class Main {
         System.out.println("Saving output to " + config.getProperty("output_path"));
         System.out.println("Setting master node to " + config.getProperty("master_node"));
         System.out.println("Minimum partitions when reading files: " + config.getProperty("min_partitions"));
-        System.out.println("Matching with stocks " + config.getProperty("data_match"));
         System.out.println("Using " + config.getProperty("num_segments") + " segments to divide the stocks into");
+        System.out.println("Matching with stocks " + config.getProperty("data_match"));
+        System.out.println("Using start date:" + config.getProperty("start_date"));
+        System.out.println("Using end date:" + config.getProperty("end_date"));
 
         System.setProperty("hadoop.home.dir", config.getProperty("hadoop_path"));
         String path = config.getProperty("data_path");
         String outputPath = config.getProperty("output_path");
         String masterNode = config.getProperty("master_node");
         int minPartitions = Integer.parseInt(config.getProperty("min_partitions"));
-        String source = config.getProperty("data_match"); // only considers stocks that contain `source` as a sub-string
         int numSegments = Integer.parseInt(config.getProperty("num_segments"));
+        String source = config.getProperty("data_match"); // only considers stocks that contain `source` as a sub-string
+        String start_date = config.getProperty("start_date");
+        String end_date = config.getProperty("end_date");
+
 
         List<Date> dates = null;
         try {
             SimpleDateFormat format = new SimpleDateFormat(DATE_FORMAT);
             // 12:00 indicates that every measurement (on workdays) is taken at 12:00
-            dates = generateDates(format.parse("01/01/2020-12:00"), format.parse("02/10/2020-12:00"));
+            dates = generateDates(format.parse(start_date), format.parse(end_date));
         } catch (ParseException e) {
             e.printStackTrace();
         }
