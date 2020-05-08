@@ -221,7 +221,7 @@ public class Main {
                     s._2.sort(Comparator.comparing(Tuple6::_1));
 
                     // Interpolate
-                    List<Tuple2<Date, Double>> prices = new ArrayList<>();
+                    List<Tuple2<Date, Double>> prices = new ArrayList<>(dates.size());
                     int i = 0;
                     for (Date date : dates) {
                         // takes observations prev and next such that prev.time <= date.time < next.time and there are no observations between prev and next
