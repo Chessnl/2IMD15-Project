@@ -4,6 +4,7 @@ output_path=C:/Eigen Domein/Data/2IMD15 Data Engineering/out/
 master_node=local[*]
 min_partitions=8
 num_segments=10
+server=false
 data_match=Amsterdam
 start_date=01/01/2020-12:00
 end_date=02/10/2020-12:00

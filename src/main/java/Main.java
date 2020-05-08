@@ -4,7 +4,7 @@ import Correlations.PearsonCorrelation;
 import org.apache.commons.collections.ListUtils;
 import org.apache.spark.SparkConf;
 import org.apache.spark.api.java.JavaPairRDD;
-import org.apache.spark.api.java.JavaSparkContext;
+import org.apache.spark.sql.SparkSession;
 import org.jfree.chart.ChartFactory;
 import org.jfree.chart.ChartPanel;
 import org.jfree.chart.JFreeChart;
@@ -17,6 +17,7 @@ import scala.*;
 import java.awt.*;
 import java.io.FileInputStream;
 import java.io.IOException;
+import java.lang.Boolean;
 import java.lang.Double;
 import java.lang.Long;
 import java.text.ParseException;
@@ -30,18 +31,23 @@ public class Main {
 
     final static private String DATE_FORMAT = "MM/dd/yyyy-HH:mm";
 
-    final private JavaSparkContext sparkContext;
     private static final boolean DEBUGGING = false;
+    final private SparkSession sparkSession;
 
     // Choose a correlation function
     private CorrelationFunction PearsonCorrelationFunction = new PearsonCorrelation();
     private CorrelationFunction MutualInformationFunction = new MutualInformationCorrelation();
 
     Main(String path, String outputPath, String source, List<Date> dates, String masterNode,
-         int minPartitions, int numSegments) {
-        // set spark context
-        SparkConf conf = new SparkConf().setAppName("test_app").setMaster(masterNode).set("spark.driver.bindAddress", "127.0.0.1");
-        sparkContext = new JavaSparkContext(conf);
+         int minPartitions, int numSegments, boolean server) {
+        // Create sparkSession
+
+        if (server) {
+            sparkSession = SparkSession.builder().appName("Main").getOrCreate();
+        } else {
+            SparkConf conf = new SparkConf().setAppName("test_app").setMaster(masterNode).set("spark.driver.bindAddress", "127.0.0.1");
+            sparkSession = SparkSession.builder().appName("Main").config(conf).getOrCreate();
+        }
 
         if (dates.size() < 2) throw new IllegalArgumentException("dates.size() should be at least 2");
 
@@ -85,7 +91,7 @@ public class Main {
             }
         }
 
-        sparkContext.stop();
+        sparkSession.stop();
     }
 
     /**
@@ -113,9 +119,9 @@ public class Main {
         }
 
         // creates for each file (stockName, [(time, opening, highest, lowest, closing, volume)])
-        return this.sparkContext
+        return this.sparkSession.sparkContext()
                 // load all files specified by path, stores as (path-to-file, file-content)
-                .wholeTextFiles(path + "{" + dates.toString() + "}_" + source + "_*", minPartitions)
+                .wholeTextFiles(path + "{" + dates.toString() + "}_" + source + "_*", minPartitions).toJavaRDD()
 
 
                 .mapToPair(s -> {
@@ -387,6 +393,7 @@ public class Main {
         System.out.println("Setting master node to " + config.getProperty("master_node"));
         System.out.println("Minimum partitions when reading files: " + config.getProperty("min_partitions"));
         System.out.println("Using " + config.getProperty("num_segments") + " segments to divide the stocks into");
+        System.out.println("Running on server: " + config.getProperty("server"));
         System.out.println("Matching with stocks " + config.getProperty("data_match"));
         System.out.println("Using start date:" + config.getProperty("start_date"));
         System.out.println("Using end date:" + config.getProperty("end_date"));
@@ -397,6 +404,7 @@ public class Main {
         String masterNode = config.getProperty("master_node");
         int minPartitions = Integer.parseInt(config.getProperty("min_partitions"));
         int numSegments = Integer.parseInt(config.getProperty("num_segments"));
+        boolean server = Boolean.parseBoolean(config.getProperty("server"));
         String source = config.getProperty("data_match"); // only considers stocks that contain `source` as a sub-string
         String start_date = config.getProperty("start_date");
         String end_date = config.getProperty("end_date");
@@ -411,6 +419,6 @@ public class Main {
             e.printStackTrace();
         }
 
-        new Main(path, outputPath, source, dates, masterNode, minPartitions, numSegments);
+        new Main(path, outputPath, source, dates, masterNode, minPartitions, numSegments, server);
     }
 }
