@@ -285,7 +285,9 @@ public class Main {
                         for (Tuple2<String, List<Tuple2<Date, Double>>> stock2 : bucket2) {
                             String stock1Name = stock1._1;
                             String stock2Name = stock2._1;
-                            if (stock1Name.compareTo(stock2Name) > 0) { // Avoid double compares and compare against itself
+                            // If a bucket is compared against itself, avoid double compares and compares of a
+                            // stock against the same stock
+                            if (!s._1._1.equals(s._2._1) || stock1Name.compareTo(stock2Name) > 0) {
                                 Double correlation = correlationFunction.getCorrelation(
                                         stock1._2,
                                         stock2._2
