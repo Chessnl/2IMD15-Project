@@ -207,11 +207,6 @@ public class Main {
         return rdd
                 // creates for each stock (stock-name, [(time, opening, highest, lowest, closing, volume)]) sorted on time
                 .reduceByKey(ListUtils::union)
-                .map(s -> {
-                    s._2.sort(Comparator.comparing(Tuple6::_1));
-                    return new Tuple2<>(s._1, s._2);
-                })
-
                 // only consider stocks which had at least 10 observations
                 .filter(s -> s._2.size() >= 10)
 
@@ -221,8 +216,12 @@ public class Main {
                     // returns (file-name, [(time, price)])
                     // every observation has a time from the queried timestamps
                     // price corresponds to the expected price of the stock at this queried point in time
-                    List<Tuple2<Date, Double>> prices = new ArrayList<>();
 
+                    // Sort observations on time for safety
+                    s._2.sort(Comparator.comparing(Tuple6::_1));
+
+                    // Interpolate
+                    List<Tuple2<Date, Double>> prices = new ArrayList<>(dates.size());
                     int i = 0;
                     for (Date date : dates) {
                         // takes observations prev and next such that prev.time <= date.time < next.time and there are no observations between prev and next
@@ -286,7 +285,9 @@ public class Main {
                         for (Tuple2<String, List<Tuple2<Date, Double>>> stock2 : bucket2) {
                             String stock1Name = stock1._1;
                             String stock2Name = stock2._1;
-                            if (stock1Name.compareTo(stock2Name) > 0) { // Avoid double compares and compare against itself
+                            // If a bucket is compared against itself, avoid double compares and compares of a
+                            // stock against the same stock
+                            if (!s._1._1.equals(s._2._1) || stock1Name.compareTo(stock2Name) > 0) {
                                 Double correlation = correlationFunction.getCorrelation(
                                         stock1._2,
                                         stock2._2
