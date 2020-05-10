@@ -38,14 +38,14 @@ public class Main {
     private CorrelationFunction PearsonCorrelationFunction = new PearsonCorrelation();
     private CorrelationFunction MutualInformationFunction = new MutualInformationCorrelation();
 
-    Main(String path, String outputPath, String source, List<Date> dates, String masterNode,
+    Main(String path, String outputPath, String source, List<Date> dates, String masterNode, String sparkDriver,
          int minPartitions, int numSegments, boolean server) {
         // Create sparkSession
 
         if (server) {
             sparkSession = SparkSession.builder().appName("Main").getOrCreate();
         } else {
-            SparkConf conf = new SparkConf().setAppName("test_app").setMaster(masterNode).set("spark.driver.bindAddress", "127.0.0.1");
+            SparkConf conf = new SparkConf().setAppName("test_app").setMaster(masterNode).set("spark.driver.bindAddress", sparkDriver);
             sparkSession = SparkSession.builder().appName("Main").config(conf).getOrCreate();
         }
 
@@ -391,6 +391,7 @@ public class Main {
         System.out.println("Using Hadoop directory " + config.getProperty("hadoop_path"));
         System.out.println("Saving output to " + config.getProperty("output_path"));
         System.out.println("Setting master node to " + config.getProperty("master_node"));
+        System.out.println("Using Spark driver bind address: " + config.getProperty("spark_driver"));
         System.out.println("Minimum partitions when reading files: " + config.getProperty("min_partitions"));
         System.out.println("Using " + config.getProperty("num_segments") + " segments to divide the stocks into");
         System.out.println("Running on server: " + config.getProperty("server"));
@@ -402,6 +403,7 @@ public class Main {
         String path = config.getProperty("data_path");
         String outputPath = config.getProperty("output_path");
         String masterNode = config.getProperty("master_node");
+        String sparkDriver = config.getProperty("spark_driver");
         int minPartitions = Integer.parseInt(config.getProperty("min_partitions"));
         int numSegments = Integer.parseInt(config.getProperty("num_segments"));
         boolean server = Boolean.parseBoolean(config.getProperty("server"));
@@ -419,6 +421,6 @@ public class Main {
             e.printStackTrace();
         }
 
-        new Main(path, outputPath, source, dates, masterNode, minPartitions, numSegments, server);
+        new Main(path, outputPath, source, dates, masterNode, sparkDriver, minPartitions, numSegments, server);
     }
 }
