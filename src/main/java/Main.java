@@ -11,21 +11,22 @@ import org.jfree.chart.JFreeChart;
 import org.jfree.chart.labels.StandardXYToolTipGenerator;
 import org.jfree.chart.plot.XYPlot;
 import org.jfree.chart.renderer.xy.XYLineAndShapeRenderer;
-import org.jfree.data.time.*;
-import scala.*;
+import org.jfree.data.time.Minute;
+import org.jfree.data.time.TimeSeries;
+import org.jfree.data.time.TimeSeriesCollection;
+import scala.Tuple2;
+import scala.Tuple6;
 
+import javax.swing.*;
 import java.awt.*;
 import java.io.FileInputStream;
 import java.io.IOException;
-import java.lang.Boolean;
-import java.lang.Double;
-import java.lang.Long;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.List;
-
-import javax.swing.*;
 
 public class Main {
 
@@ -69,15 +70,27 @@ public class Main {
         JavaPairRDD<Tuple2<String, String>, Double> pearsonCorrelations =
                 calculateCorrelations(timeSeries, PearsonCorrelationFunction, numSegments);
 
+        // Define a new output folder based on date and time and copy the current config to it
+        String outputFolder = "out_" + new SimpleDateFormat("yyyy-MM-dd_HH-mm-ss").format(new Date());
+        try {
+            Files.createDirectories(Paths.get(outputPath, outputFolder));
+            Files.copy(Paths.get("config.properties"), Paths.get(outputPath, outputFolder, "config.properties"));
+        } catch (IOException e) {
+            e.printStackTrace();
+            System.exit(-1);
+        }
+
         // Save the output correlation pairs to a file
-        pearsonCorrelations.coalesce(1).saveAsTextFile(outputPath + "000000_PEARSON_OUTPUT");
+        pearsonCorrelations.coalesce(1).saveAsTextFile(
+                Paths.get(outputPath, outputFolder, "Pearson").toUri().getPath());
 
         // compute the MutualInformation correlation
         JavaPairRDD<Tuple2<String, String>, Double> mutualCorrelations =
                 calculateCorrelations(timeSeries, MutualInformationFunction, numSegments);
 
         // Save the output correlation pairs to a file
-        mutualCorrelations.coalesce(1).saveAsTextFile(outputPath + "000000_MUTUAL_OUTPUT");
+        mutualCorrelations.coalesce(1).saveAsTextFile(
+                Paths.get(outputPath, outputFolder, "MutualInformation").toUri().getPath());
 
         if (DEBUGGING) {
             // Filter out the combinations that have a high correlation only
@@ -230,7 +243,7 @@ public class Main {
                         if (i == 0) { // takes first observation if query time is before the first observation
                             prices.add(new Tuple2<>(date, s._2.get(0)._5()));
                         } else if (i == s._2.size()) { // take last observation if query time is after the last observation
-                            prices.add(new Tuple2<>(date, s._2.get(s._2.size()-1)._5()));
+                            prices.add(new Tuple2<>(date, s._2.get(s._2.size() - 1)._5()));
                         } else {
                             Tuple6<Date, Double, Double, Double, Double, Long> prev = s._2.get(i - 1);
                             Tuple6<Date, Double, Double, Double, Double, Long> next = s._2.get(i);
@@ -397,8 +410,8 @@ public class Main {
         System.out.println("Using " + config.getProperty("num_segments") + " segments to divide the stocks into");
         System.out.println("Running on server: " + config.getProperty("server"));
         System.out.println("Matching with stocks " + config.getProperty("data_match"));
-        System.out.println("Using start date:" + config.getProperty("start_date"));
-        System.out.println("Using end date:" + config.getProperty("end_date"));
+        System.out.println("Using start date: " + config.getProperty("start_date"));
+        System.out.println("Using end date: " + config.getProperty("end_date"));
 
         System.setProperty("hadoop.home.dir", config.getProperty("hadoop_path"));
         String path = config.getProperty("data_path");
