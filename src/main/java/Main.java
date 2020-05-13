@@ -126,7 +126,7 @@ public class Main {
 
                 .mapToPair(s -> {
                     // Obtain stockName from filename
-                    String stockName = s._1.replaceAll("file:/" + path, "").split("_")[2];
+                    String stockName = s._1.replaceAll("file:/" + path, "").replaceAll("_NoExpiry.txt", "").split("_", 2)[1];
 
                     // Process lines in the file
                     List<Tuple6<Date, Double, Double, Double, Double, Long>> observations = new ArrayList<>();
