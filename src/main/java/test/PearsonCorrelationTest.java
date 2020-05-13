@@ -17,14 +17,12 @@ class PearsonCorrelationTest {
 
     @Test
     void test1() {
-        List<Tuple2<Date, Double>> first = new LinkedList<>();
-        List<Tuple2<Date, Double>> second = new LinkedList<>();
+        List<Double> first = new LinkedList<>();
+        List<Double> second = new LinkedList<>();
 
         for (double i = 0; i < 10; i++){
-            Date date = new Date();
-            Tuple2<Date, Double> point = new Tuple2<Date, Double>(date, i);
-            first.add(point);
-            second.add(point);
+            first.add(i);
+            second.add(i);
         }
 
         assertEquals(correl.getCorrelation(first, second), 1);
@@ -32,25 +30,25 @@ class PearsonCorrelationTest {
 
     @Test
     void test2(){
-        List<Tuple2<Date, Double>> first = new LinkedList<Tuple2<Date, Double>>(){
+        List<Double> first = new LinkedList<Double>(){
             {
-                add(new Tuple2<Date, Double>(new Date(), 10.0));
-                add(new Tuple2<Date, Double>(new Date(), 4.0));
-                add(new Tuple2<Date, Double>(new Date(), 7.0));
-                add(new Tuple2<Date, Double>(new Date(), 2.0));
-                add(new Tuple2<Date, Double>(new Date(), 6.0));
-                add(new Tuple2<Date, Double>(new Date(), 8.0));
+                add(10.0);
+                add(4.0);
+                add(7.0);
+                add(2.0);
+                add(6.0);
+                add(8.0);
             }
         };
 
-        List<Tuple2<Date, Double>> second = new LinkedList<Tuple2<Date, Double>>(){
+        List<Double> second = new LinkedList<Double>(){
             {
-                add(new Tuple2<Date, Double>(new Date(), 1.0));
-                add(new Tuple2<Date, Double>(new Date(), 3.0));
-                add(new Tuple2<Date, Double>(new Date(), 7.0));
-                add(new Tuple2<Date, Double>(new Date(), 4.0));
-                add(new Tuple2<Date, Double>(new Date(), 9.0));
-                add(new Tuple2<Date, Double>(new Date(), 10.0));
+                add(1.0);
+                add(3.0);
+                add(7.0);
+                add(4.0);
+                add(9.0);
+                add(10.0);
             }
         };
 

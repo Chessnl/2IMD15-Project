@@ -18,31 +18,31 @@ class MutualInformationCorrelationTest {
 
     @Test
     void test1(){
-        List<Tuple2<Date, Double>> first = new LinkedList<Tuple2<Date, Double>>(){
+        List<Double> first = new LinkedList<Double>(){
             {
-                add(new Tuple2<Date, Double>(new Date(), 1.0));
-                add(new Tuple2<Date, Double>(new Date(), 1.0));
-                add(new Tuple2<Date, Double>(new Date(), 1.0));
-                add(new Tuple2<Date, Double>(new Date(), 1.0));
-                add(new Tuple2<Date, Double>(new Date(), 2.0));
-                add(new Tuple2<Date, Double>(new Date(), 2.0));
-                add(new Tuple2<Date, Double>(new Date(), 2.0));
-                add(new Tuple2<Date, Double>(new Date(), 2.0));
-                add(new Tuple2<Date, Double>(new Date(), 2.0));
+                add(1.0);
+                add(1.0);
+                add(1.0);
+                add(1.0);
+                add(2.0);
+                add(2.0);
+                add(2.0);
+                add(2.0);
+                add(2.0);
             }
         };
 
-        List<Tuple2<Date, Double>> second = new LinkedList<Tuple2<Date, Double>>(){
+        List<Double> second = new LinkedList<Double>(){
             {
-                add(new Tuple2<Date, Double>(new Date(), 1.0));
-                add(new Tuple2<Date, Double>(new Date(), 1.0));
-                add(new Tuple2<Date, Double>(new Date(), 2.0));
-                add(new Tuple2<Date, Double>(new Date(), 2.0));
-                add(new Tuple2<Date, Double>(new Date(), 1.0));
-                add(new Tuple2<Date, Double>(new Date(), 1.0));
-                add(new Tuple2<Date, Double>(new Date(), 1.0));
-                add(new Tuple2<Date, Double>(new Date(), 1.0));
-                add(new Tuple2<Date, Double>(new Date(), 2.0));
+                add(1.0);
+                add(1.0);
+                add(2.0);
+                add(2.0);
+                add(1.0);
+                add(1.0);
+                add(1.0);
+                add(1.0);
+                add(2.0);
             }
         };
 

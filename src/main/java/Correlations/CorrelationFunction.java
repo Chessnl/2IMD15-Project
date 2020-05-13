@@ -7,5 +7,5 @@ import java.util.Date;
 import java.util.List;
 
 public interface CorrelationFunction extends Serializable {
-    double getCorrelation(List<Tuple2<Date, Double>> first, List<Tuple2<Date, Double>> second);
+    double getCorrelation(List<Double> first, List<Double> second);
 }

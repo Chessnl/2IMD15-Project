@@ -10,7 +10,7 @@ import java.util.List;
 public class MutualInformationCorrelation implements CorrelationFunction, Serializable {
 
     @Override
-    public double getCorrelation(List<Tuple2<Date, Double>> first, List<Tuple2<Date, Double>> second) {
+    public double getCorrelation(List<Double> first, List<Double> second) {
         int nrBuckets = 20;
 
         // Determine min and max
@@ -28,15 +28,15 @@ public class MutualInformationCorrelation implements CorrelationFunction, Serial
         double increment = 1.0/first.size();
 
         // Prepare for simultaneous looping
-        Iterator<Tuple2<Date, Double>> iterX = first.iterator();
-        Iterator<Tuple2<Date, Double>> iterY = second.iterator();
+        Iterator<Double> iterX = first.iterator();
+        Iterator<Double> iterY = second.iterator();
 
         if(!first.isEmpty() && !second.isEmpty()) {
 
             // Loop over both timeseries
             while (iterX.hasNext() && iterY.hasNext()){
-                double xi = iterX.next()._2;
-                double yi = iterY.next()._2;
+                double xi = iterX.next();
+                double yi = iterY.next();
 
                 // Determine both buckets
                 int bucketX = (int) ((xi-minMaxX._1) / stepX);
@@ -63,17 +63,17 @@ public class MutualInformationCorrelation implements CorrelationFunction, Serial
     }
 
     // Find the minimum and maximum of a single dataset
-    private Tuple2<Double, Double> findMinMax(List<Tuple2<Date, Double>> data){
+    private Tuple2<Double, Double> findMinMax(List<Double> data){
         double min = Double.MAX_VALUE;
         double max = Double.MIN_VALUE;
 
         // Loop over the set to discover the min and max values
-        for (Tuple2<Date, Double> point : data){
-            if (point._2 < min){
-                min = point._2;
+        for (Double point : data){
+            if (point < min){
+                min = point;
             }
-            if (point._2 > max){
-                max = point._2;
+            if (point > max){
+                max = point;
             }
         }
         return new Tuple2<>(min, max);
