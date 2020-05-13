@@ -9,11 +9,11 @@ import org.jfree.chart.ChartFactory;
 import org.jfree.chart.ChartPanel;
 import org.jfree.chart.JFreeChart;
 import org.jfree.chart.labels.StandardXYToolTipGenerator;
+import org.jfree.chart.plot.PlotOrientation;
 import org.jfree.chart.plot.XYPlot;
 import org.jfree.chart.renderer.xy.XYLineAndShapeRenderer;
-import org.jfree.data.time.Minute;
-import org.jfree.data.time.TimeSeries;
-import org.jfree.data.time.TimeSeriesCollection;
+import org.jfree.data.xy.XYSeries;
+import org.jfree.data.xy.XYSeriesCollection;
 import scala.Tuple2;
 import scala.Tuple6;
 
@@ -56,13 +56,13 @@ public class Main {
         dates.sort(Date::compareTo);
 
         // For each stock, a list of time and value combinations to compare
-        JavaPairRDD<String, List<Tuple2<Date, Double>>> timeSeries = prepareData(
+        JavaPairRDD<String, List<Double>> timeSeries = prepareData(
                 parse(path, source, dates.get(0), dates.get(dates.size() - 1), minPartitions), dates
         );
 
         if (DEBUGGING) {
             // For debugging, plot the values
-            List<Tuple2<String, List<Tuple2<Date, Double>>>> collected = timeSeries.collect();
+            List<Tuple2<String, List<Double>>> collected = timeSeries.collect();
             plot(collected);
         }
 
@@ -139,7 +139,7 @@ public class Main {
 
                 .mapToPair(s -> {
                     // Obtain stockName from filename
-                    String stockName = s._1.replaceAll("file:/" + path, "").split("_")[2];
+                    String stockName = s._1.replaceAll("file:/" + path, "").replaceAll("_NoExpiry.txt", "").split("_", 2)[1];
 
                     // Process lines in the file
                     List<Tuple6<Date, Double, Double, Double, Double, Long>> observations = new ArrayList<>();
@@ -216,7 +216,7 @@ public class Main {
      * @param dates [time]
      * @return (stockName, [ ( time, price - difference)])
      */
-    private JavaPairRDD<String, List<Tuple2<Date, Double>>> prepareData(JavaPairRDD<String, List<Tuple6<Date, Double, Double, Double, Double, Long>>> rdd, List<Date> dates) {
+    private JavaPairRDD<String, List<Double>> prepareData(JavaPairRDD<String, List<Tuple6<Date, Double, Double, Double, Double, Long>>> rdd, List<Date> dates) {
         return rdd
                 // creates for each stock (stock-name, [(time, opening, highest, lowest, closing, volume)]) sorted on time
                 .reduceByKey(ListUtils::union)
@@ -234,16 +234,16 @@ public class Main {
                     s._2.sort(Comparator.comparing(Tuple6::_1));
 
                     // Interpolate
-                    List<Tuple2<Date, Double>> prices = new ArrayList<>(dates.size());
+                    List<Double> prices = new ArrayList<>(dates.size());
                     int i = 0;
                     for (Date date : dates) {
                         // takes observations prev and next such that prev.time <= date.time < next.time and there are no observations between prev and next
                         while (i < s._2.size() && date.after(s._2.get(i)._1())) i++;
 
                         if (i == 0) { // takes first observation if query time is before the first observation
-                            prices.add(new Tuple2<>(date, s._2.get(0)._5()));
+                            prices.add(s._2.get(0)._5());
                         } else if (i == s._2.size()) { // take last observation if query time is after the last observation
-                            prices.add(new Tuple2<>(date, s._2.get(s._2.size() - 1)._5()));
+                            prices.add(s._2.get(s._2.size()-1)._5());
                         } else {
                             Tuple6<Date, Double, Double, Double, Double, Long> prev = s._2.get(i - 1);
                             Tuple6<Date, Double, Double, Double, Double, Long> next = s._2.get(i);
@@ -259,7 +259,7 @@ public class Main {
                             // takes the price to be the interpolation between the opening and closing price at the observation of next
                             double price = (1 - alpha) * next._2() + alpha * next._5();
 
-                            prices.add(new Tuple2<>(date, price));
+                            prices.add(price);
                         }
                     }
                     return new Tuple2<>(s._1, prices);
@@ -274,28 +274,28 @@ public class Main {
      * @return
      */
     private JavaPairRDD<Tuple2<String, String>, Double> calculateCorrelations(
-            JavaPairRDD<String, List<Tuple2<Date, Double>>> timeSeries,
+            JavaPairRDD<String, List<Double>> timeSeries,
             CorrelationFunction correlationFunction,
             int numSegments
     ) {
-        JavaPairRDD<Integer, List<Tuple2<String, List<Tuple2<Date, Double>>>>> keyed = timeSeries.mapToPair(s -> {
+        JavaPairRDD<Integer, List<Tuple2<String, List<Double>>>> keyed = timeSeries.mapToPair(s -> {
             int hash = s._1.hashCode() % numSegments;
-            List<Tuple2<String, List<Tuple2<Date, Double>>>> value = new ArrayList<>();
+            List<Tuple2<String, List<Double>>> value = new ArrayList<>();
             value.add(new Tuple2<>(s._1, s._2));
             return new Tuple2<>(hash, value);
         });
 
-        JavaPairRDD<Integer, List<Tuple2<String, List<Tuple2<Date, Double>>>>> bucketed = keyed.reduceByKey(ListUtils::union);
+        JavaPairRDD<Integer, List<Tuple2<String, List<Double>>>> bucketed = keyed.reduceByKey(ListUtils::union);
 
         return bucketed.cartesian(bucketed) // Cartesian
                 .filter(s -> s._1._1 >= s._2._1) // Only compare buckets on one side of the diagonal (and on, as buckets are not just 1 value)
                 .flatMapToPair(s -> {
-                    List<Tuple2<String, List<Tuple2<Date, Double>>>> bucket1 = s._1._2;
-                    List<Tuple2<String, List<Tuple2<Date, Double>>>> bucket2 = s._2._2;
+                    List<Tuple2<String, List<Double>>> bucket1 = s._1._2;
+                    List<Tuple2<String, List<Double>>> bucket2 = s._2._2;
 
                     List<Tuple2<Tuple2<String, String>, Double>> out = new ArrayList<>();
-                    for (Tuple2<String, List<Tuple2<Date, Double>>> stock1 : bucket1) {
-                        for (Tuple2<String, List<Tuple2<Date, Double>>> stock2 : bucket2) {
+                    for (Tuple2<String, List<Double>> stock1 : bucket1) {
+                        for (Tuple2<String, List<Double>> stock2 : bucket2) {
                             String stock1Name = stock1._1;
                             String stock2Name = stock2._1;
                             // If a bucket is compared against itself, avoid double compares and compares of a
@@ -324,27 +324,28 @@ public class Main {
     }
 
     // simple plot function
-    private void plot(List<Tuple2<String, List<Tuple2<Date, Double>>>> data) {
+    private void plot(List<Tuple2<String, List<Double>>> data) {
         // Create Dataset to Plot
-        TimeSeriesCollection dataset = new TimeSeriesCollection();
-        for (Tuple2<String, List<Tuple2<Date, Double>>> stock : data) {
-            TimeSeries series = new TimeSeries(stock._1);
-            for (Tuple2<Date, Double> entry : stock._2) {
-                series.add(new Minute(entry._1()), entry._2());
+        XYSeriesCollection dataset = new XYSeriesCollection();
+        double idx = 0.0;
+        for (Tuple2<String, List<Double>> stock : data) {
+            XYSeries series = new XYSeries(stock._1);
+            for (Double value : stock._2) {
+                series.add(idx, value);
             }
             dataset.addSeries(series);
         }
 
         // Create UI
-        JFreeChart chart = ChartFactory.createTimeSeriesChart(
+        JFreeChart chart = ChartFactory.createXYLineChart(
                 "Data Engineering",
-                "time",
+                "day number",
                 "value",
                 dataset,
-                true,
-                true,
-                true
+                PlotOrientation.VERTICAL ,
+                true , true , false
         );
+
         XYPlot plot = chart.getXYPlot();
         plot.setBackgroundPaint(Color.WHITE);
 
