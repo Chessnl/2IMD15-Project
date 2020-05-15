@@ -1,6 +1,7 @@
 import Correlations.CorrelationFunction;
 import Correlations.MutualInformationCorrelation;
 import Correlations.PearsonCorrelation;
+import Correlations.TotalCorrelation;
 import org.apache.commons.collections.ListUtils;
 import org.apache.spark.SparkConf;
 import org.apache.spark.api.java.JavaPairRDD;
@@ -38,6 +39,7 @@ public class Main {
     // Choose a correlation function
     private CorrelationFunction PearsonCorrelationFunction = new PearsonCorrelation();
     private CorrelationFunction MutualInformationFunction = new MutualInformationCorrelation();
+    private CorrelationFunction TotalCorrelationFunction = new TotalCorrelation();
 
     Main(String path, String outputPath, String source, List<Date> dates, String masterNode, String sparkDriver,
          int minPartitions, int numSegments, boolean server, String[] exclusions) {
@@ -66,16 +68,9 @@ public class Main {
             plot(collected);
         }
 
-        // compute the PearsonCorrelation Function
-        JavaPairRDD<Tuple2<String, String>, Double> pearsonCorrelations =
-                calculateCorrelations(timeSeries, PearsonCorrelationFunction, numSegments);
-
         // Define a new output folder based on date and time and copy the current config to it
         String outputFolder = "out_" + new SimpleDateFormat("yyyy-MM-dd_HH-mm-ss").format(new Date());
-        if (server) {
-            // On the server do not coalesce and do not use java Paths to support hdfs
-            pearsonCorrelations.saveAsTextFile(outputPath + outputFolder + "Pearson");
-        } else {
+        if (!server) {
             try {
                 Files.createDirectories(Paths.get(outputPath, outputFolder));
                 Files.copy(Paths.get("config.properties"), Paths.get(outputPath, outputFolder, "config.properties"));
@@ -83,25 +78,22 @@ public class Main {
                 e.printStackTrace();
                 System.exit(-1);
             }
-
-            // Save the output correlation pairs to a file
-            pearsonCorrelations.coalesce(1).saveAsTextFile(
-                    Paths.get(outputPath, outputFolder, "Pearson").toUri().getPath());
         }
+
+        // compute the PearsonCorrelation Function
+        JavaPairRDD<Tuple2<String, String>, Double> pearsonCorrelations =
+                calculateCorrelations(timeSeries, PearsonCorrelationFunction, numSegments);
+        saveCorrelationResultsToFile(pearsonCorrelations, "Pearson", server, outputPath, outputFolder);
 
         // compute the MutualInformation correlation
         JavaPairRDD<Tuple2<String, String>, Double> mutualCorrelations =
                 calculateCorrelations(timeSeries, MutualInformationFunction, numSegments);
+        saveCorrelationResultsToFile(mutualCorrelations, "MutualInformation", server, outputPath, outputFolder);
 
-        // Save the output correlation pairs to a file
-        if (server) {
-            // On the server do not coalesce and do not use java Paths to support hdfs
-            mutualCorrelations.saveAsTextFile(outputPath + outputFolder + "MutualInformation");
-        } else {
-            // On a local system coalesce before writing to file
-            mutualCorrelations.coalesce(1).saveAsTextFile(
-                    Paths.get(outputPath, outputFolder, "MutualInformation").toUri().getPath());
-        }
+        // compute the TotalCorrelation
+        JavaPairRDD<Tuple2<String, String>, Double> totalCorrelation =
+                calculateCorrelations(timeSeries, TotalCorrelationFunction, numSegments);
+        saveCorrelationResultsToFile(totalCorrelation, "TotalCorrelation", server, outputPath, outputFolder);
 
         if (DEBUGGING) {
             // Filter out the combinations that have a high correlation only
@@ -116,6 +108,19 @@ public class Main {
         }
 
         sparkSession.stop();
+    }
+
+    private void saveCorrelationResultsToFile(JavaPairRDD<Tuple2<String, String>,
+            Double> result, String name, Boolean server, String outputPath, String outputFolder
+    ) {
+        if (server) {
+            // On the server do not coalesce and do not use java Paths to support hdfs
+            result.saveAsTextFile(outputPath + outputFolder + name);
+        } else {
+            // On a local system coalesce before writing to file
+            result.coalesce(1).saveAsTextFile(
+                    Paths.get(outputPath, outputFolder, name).toUri().getPath());
+        }
     }
 
     /**
