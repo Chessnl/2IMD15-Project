@@ -1,7 +1,5 @@
 package test;
 
-import Correlations.CorrelationFunction;
-import Correlations.MutualInformationCorrelation;
 import Correlations.TotalCorrelation;
 import org.junit.jupiter.api.Test;
 import scala.Tuple2;
