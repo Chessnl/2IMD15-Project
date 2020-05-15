@@ -72,25 +72,36 @@ public class Main {
 
         // Define a new output folder based on date and time and copy the current config to it
         String outputFolder = "out_" + new SimpleDateFormat("yyyy-MM-dd_HH-mm-ss").format(new Date());
-        try {
-            Files.createDirectories(Paths.get(outputPath, outputFolder));
-            Files.copy(Paths.get("config.properties"), Paths.get(outputPath, outputFolder, "config.properties"));
-        } catch (IOException e) {
-            e.printStackTrace();
-            System.exit(-1);
-        }
+        if (server) {
+            // On the server do not coalesce and do not use java Paths to support hdfs
+            pearsonCorrelations.saveAsTextFile(outputPath + outputFolder + "Pearson");
+        } else {
+            try {
+                Files.createDirectories(Paths.get(outputPath, outputFolder));
+                Files.copy(Paths.get("config.properties"), Paths.get(outputPath, outputFolder, "config.properties"));
+            } catch (IOException e) {
+                e.printStackTrace();
+                System.exit(-1);
+            }
 
-        // Save the output correlation pairs to a file
-        pearsonCorrelations.coalesce(1).saveAsTextFile(
-                Paths.get(outputPath, outputFolder, "Pearson").toUri().getPath());
+            // Save the output correlation pairs to a file
+            pearsonCorrelations.coalesce(1).saveAsTextFile(
+                    Paths.get(outputPath, outputFolder, "Pearson").toUri().getPath());
+        }
 
         // compute the MutualInformation correlation
         JavaPairRDD<Tuple2<String, String>, Double> mutualCorrelations =
                 calculateCorrelations(timeSeries, MutualInformationFunction, numSegments);
 
         // Save the output correlation pairs to a file
-        mutualCorrelations.coalesce(1).saveAsTextFile(
-                Paths.get(outputPath, outputFolder, "MutualInformation").toUri().getPath());
+        if (server) {
+            // On the server do not coalesce and do not use java Paths to support hdfs
+            mutualCorrelations.saveAsTextFile(outputPath + outputFolder + "MutualInformation");
+        } else {
+            // On a local system coalesce before writing to file
+            mutualCorrelations.coalesce(1).saveAsTextFile(
+                    Paths.get(outputPath, outputFolder, "MutualInformation").toUri().getPath());
+        }
 
         if (DEBUGGING) {
             // Filter out the combinations that have a high correlation only
