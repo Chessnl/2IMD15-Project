@@ -15,15 +15,9 @@ public class AverageAggregation implements AggregationFunction {
 
         for (Tuple2<String, List<Double>> stock : in) {
             stockname.append("(").append(stock._1).append(") + ");
-            double minPrice = Double.MAX_VALUE;
-            double maxPrice = Double.MIN_VALUE;
-            for (int i = 0; i < prices.length; i++) {
-                minPrice = Math.min(minPrice, stock._2.get(i));
-                maxPrice = Math.max(maxPrice, stock._2.get(i));
-            }
 
             for (int i = 0; i < prices.length; i++) {
-                prices[i] += (stock._2.get(i) - minPrice) / (maxPrice - minPrice) / prices.length;
+                prices[i] += stock._2.get(i) / prices.length;
             }
         }
 
