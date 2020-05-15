@@ -24,7 +24,7 @@ public class NormalizationAggregation implements AggregationFunction {
                 maxPrice = Math.max(maxPrice, stock._2.get(i));
             }
 
-            for (Double price : stock._2) prices.add((price - minPrice) / (maxPrice - minPrice));
+            for (Double price : stock._2) prices.add(Math.min(1, Math.max(0, price - minPrice) / (maxPrice - minPrice)));
             aggregated.add(new Tuple2<>(stock._1, prices));
         }
 
