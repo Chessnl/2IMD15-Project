@@ -9,7 +9,9 @@ import java.lang.Math;
 
 public class PearsonCorrelation implements CorrelationFunction {
     @Override
-    public double getCorrelation(List<Double> first, List<Double> second) {
+    public double getCorrelation(List<Tuple2<String, List<Double>>> stocks) {
+        List<Double> first = stocks.get(0)._2;
+        List<Double> second = stocks.get(1)._2;
 
         // Retrieve averages
         double avgX = getAverage(first);

@@ -324,8 +324,7 @@ public class Main {
                             // stock against the same stock
                             if (!s._1._1.equals(s._2._1) || stock1Name.compareTo(stock2Name) > 0) {
                                 Double correlation = correlationFunction.getCorrelation(
-                                        stock1._2,
-                                        stock2._2
+                                        Arrays.asList(stock1, stock2)
                                 );
                                 out.add(new Tuple2<>(new Tuple2<>(stock1Name, stock2Name), correlation));
                             }
