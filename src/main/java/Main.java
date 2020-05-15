@@ -68,10 +68,6 @@ public class Main {
             plot(collected);
         }
 
-        // compute the PearsonCorrelation Function
-        JavaPairRDD<Tuple2<String, String>, Double> pearsonCorrelations =
-                calculateCorrelations(timeSeries, PearsonCorrelationFunction, numSegments);
-
         // Define a new output folder based on date and time and copy the current config to it
         String outputFolder = "out_" + new SimpleDateFormat("yyyy-MM-dd_HH-mm-ss").format(new Date());
         if (!server) {
@@ -83,6 +79,10 @@ public class Main {
                 System.exit(-1);
             }
         }
+
+        // compute the PearsonCorrelation Function
+        JavaPairRDD<Tuple2<String, String>, Double> pearsonCorrelations =
+                calculateCorrelations(timeSeries, PearsonCorrelationFunction, numSegments);
         saveCorrelationResultsToFile(pearsonCorrelations, "Pearson", server, outputPath, outputFolder);
 
         // compute the MutualInformation correlation
