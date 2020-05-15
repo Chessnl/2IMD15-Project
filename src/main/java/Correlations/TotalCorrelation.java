@@ -56,6 +56,6 @@ public class TotalCorrelation {
         // price in double[0, 1]
         // price * NUM_BUCKETS in double[0, NUM_BUCKETS]
         // floor (price * NUM_BUCKETS) in int[0, NUM_BUCKETS], this is 20 iff price = 1.0, assigning this price to bucket 19
-        return (int) Math.floor(Math.min(19, price * (this.NUM_BUCKETS)));
+        return (int) Math.floor(Math.min(this.NUM_BUCKETS - 1, price * (this.NUM_BUCKETS)));
     }
 }
