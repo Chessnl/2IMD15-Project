@@ -243,7 +243,7 @@ public class Main {
                         if (i == 0) { // takes first observation if query time is before the first observation
                             prices.add(s._2.get(0)._5());
                         } else if (i == s._2.size()) { // take last observation if query time is after the last observation
-                            prices.add(s._2.get(s._2.size()-1)._5());
+                            prices.add(s._2.get(s._2.size() - 1)._5());
                         } else {
                             Tuple6<Date, Double, Double, Double, Double, Long> prev = s._2.get(i - 1);
                             Tuple6<Date, Double, Double, Double, Double, Long> next = s._2.get(i);
@@ -279,36 +279,69 @@ public class Main {
             int numSegments
     ) {
         JavaPairRDD<Integer, List<Tuple2<String, List<Double>>>> keyed = timeSeries.mapToPair(s -> {
-            int hash = s._1.hashCode() % numSegments;
+            // Double mod as Java mods to (-numSegments, numSegments), but we want only [0, numSegments).
+            int hash = ((s._1.hashCode() % numSegments) + numSegments) % numSegments;
             List<Tuple2<String, List<Double>>> value = new ArrayList<>();
             value.add(new Tuple2<>(s._1, s._2));
             return new Tuple2<>(hash, value);
         });
 
-        JavaPairRDD<Integer, List<Tuple2<String, List<Double>>>> bucketed = keyed.reduceByKey(ListUtils::union);
+        JavaPairRDD<Integer, List<Tuple2<String, List<Double>>>> segments = keyed.reduceByKey(ListUtils::union);
 
-        return bucketed.cartesian(bucketed) // Cartesian
-                .filter(s -> s._1._1 >= s._2._1) // Only compare buckets on one side of the diagonal (and on, as buckets are not just 1 value)
+
+        JavaPairRDD<Integer, // Bucket number
+                List< // List of segments, one of each dimension (List.size = dimentions)
+                    List<Tuple2< // List of stocks in this segment (List.size = numStocks / numSegments (on average))
+                            String, // Stock name
+                            List<Double> // Stock timeseries
+                >>>> buckets = segments.flatMapToPair(s -> {
+            int segmentId = s._1; // The hash this segment is made of
+            System.out.println("Segment " + segmentId + " contains " + s._2.size() + " stocks.");
+            List<Tuple2<Integer, List<List<Tuple2<String, List<Double>>>>>> bucketAssignments = new ArrayList<>();
+            for (int y = 0; y < numSegments; y++) {
+                List<List<Tuple2<String, List<Double>>>> bucketAssignment = new ArrayList<>();
+                bucketAssignment.add(s._2);
+                int bucketNumber = segmentId + numSegments * y;
+                bucketAssignments.add(new Tuple2<>(bucketNumber, bucketAssignment));
+                System.out.println("Adding to bucket " + bucketNumber + " segment " + segmentId);
+            }
+            for (int x = 0; x < numSegments; x++) {
+                List<List<Tuple2<String, List<Double>>>> bucketAssignment = new ArrayList<>();
+                bucketAssignment.add(s._2);
+                int bucketNumber = x + numSegments * segmentId;
+                bucketAssignments.add(new Tuple2<>(bucketNumber, bucketAssignment));
+                System.out.println("Adding to bucket " + bucketNumber + " segment " + segmentId);
+            }
+            return bucketAssignments.iterator();
+        }).reduceByKey(ListUtils::union);
+
+        // Only consider buckets with as many values as dimensions in case not every segment has at least one stock
+        buckets = buckets.filter(bucket -> bucket._2.size() == 2);
+
+        return buckets
                 .flatMapToPair(s -> {
-                    List<Tuple2<String, List<Double>>> bucket1 = s._1._2;
-                    List<Tuple2<String, List<Double>>> bucket2 = s._2._2;
+                    int bucketId = s._1;
+                    List<List<Tuple2<String, List<Double>>>> segmentsInBucket = s._2;
+                    System.out.println("Performing comparisons on bucket " + bucketId + " which got "
+                            + segmentsInBucket.size() + " inputs.");
 
                     List<Tuple2<Tuple2<String, String>, Double>> out = new ArrayList<>();
-                    for (Tuple2<String, List<Double>> stock1 : bucket1) {
-                        for (Tuple2<String, List<Double>> stock2 : bucket2) {
-                            String stock1Name = stock1._1;
-                            String stock2Name = stock2._1;
-                            // If a bucket is compared against itself, avoid double compares and compares of a
-                            // stock against the same stock
-                            if (!s._1._1.equals(s._2._1) || stock1Name.compareTo(stock2Name) > 0) {
+                    for (Tuple2<String, List<Double>> stockDimOne : segmentsInBucket.get(0)) {
+                        for (Tuple2<String, List<Double>> stockDimTwo : segmentsInBucket.get(1)) {
+                            String stockDimOneName = stockDimOne._1;
+                            String stockDimTwoName = stockDimTwo._1;
+
+                            // NB: All double comparisons are done, but not against itself
+                            if (!stockDimOneName.equals(stockDimTwoName)) {
                                 Double correlation = correlationFunction.getCorrelation(
-                                        stock1._2,
-                                        stock2._2
+                                        stockDimOne._2,
+                                        stockDimTwo._2
                                 );
-                                out.add(new Tuple2<>(new Tuple2<>(stock1Name, stock2Name), correlation));
+                                out.add(new Tuple2<>(new Tuple2<>(stockDimOneName, stockDimTwoName), correlation));
                             }
                         }
                     }
+
                     return out.iterator();
                 });
     }
@@ -342,8 +375,8 @@ public class Main {
                 "day number",
                 "value",
                 dataset,
-                PlotOrientation.VERTICAL ,
-                true , true , false
+                PlotOrientation.VERTICAL,
+                true, true, false
         );
 
         XYPlot plot = chart.getXYPlot();
