@@ -6,7 +6,7 @@ import scala.Tuple2;
 import java.util.HashMap;
 import java.util.List;
 
-public class TotalCorrelation {
+public class TotalCorrelation implements CorrelationFunction {
 
     private final int NUM_BUCKETS = 20;
 
