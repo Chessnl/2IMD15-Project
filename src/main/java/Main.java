@@ -437,6 +437,7 @@ public class Main {
         System.out.println("Matching with stocks " + config.getProperty("data_match"));
         System.out.println("Using start date: " + config.getProperty("start_date"));
         System.out.println("Using end date: " + config.getProperty("end_date"));
+        System.out.println("Excluding files with keywords: " + config.getProperty("exclusions"));
 
         System.setProperty("hadoop.home.dir", config.getProperty("hadoop_path"));
         String path = config.getProperty("data_path");
