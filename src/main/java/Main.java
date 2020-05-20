@@ -138,25 +138,26 @@ public class Main {
     }
 
     /**
-     * Save a set of correlation results results to a file
+     * Generate a set of dates between a start and end date: one date during daytime for every workday
      *
-     * @param result
-     * @param name
-     * @param server
-     * @param outputPath
-     * @param outputFolder
+     * @param start
+     * @param end
+     * @return
      */
-    private void saveCorrelationResultsToFile(JavaPairRDD<List<String>, Double> result,
-                                              String name, Boolean server, String outputPath, String outputFolder
-    ) {
-        if (server) {
-            // On the server do not coalesce and do not use java Paths to support hdfs
-            result.saveAsTextFile(outputPath + outputFolder + name);
-        } else {
-            // On a local system coalesce before writing to file
-            result.coalesce(1).saveAsTextFile(
-                    Paths.get(outputPath, outputFolder, name).toUri().getPath());
+    static List<Date> generateDates(Date start, Date end) {
+        LinkedList<Date> dates = new LinkedList<>();
+        Date cur = start;
+        while (cur.before(end)) {
+            int weekday = cur.getDay();
+            if (weekday != 0 && weekday != 6) dates.add(cur);
+            cur = new Date(cur.getTime() + 86400000L);
         }
+        dates.add(end);
+
+        // Sorting for safety purposes
+        dates.sort(Date::compareTo);
+
+        return dates;
     }
 
     /**
@@ -376,6 +377,27 @@ public class Main {
     }
 
     /**
+     * For an ID/index along a given dimension, generate all the bucket IDs that this index falls into, which is the
+     * ID of the buckets of the index on the given dimension paired with all combinations on the other dimensions
+     *
+     * @param segmentId
+     * @param onDimension
+     * @param dimensions
+     * @return
+     */
+    private static List<Integer> getBucketNumbersForIdAlongDimension(int segmentId, int onDimension, int dimensions, int numSegments) {
+        List<Integer> bucketIds = new ArrayList<>();
+        // TODO Optimize?
+        for (int bucketId = 0; bucketId < Math.pow(numSegments, dimensions); bucketId++) {
+            if ((bucketId / (int) Math.pow(numSegments, onDimension)) % numSegments == segmentId) {
+                bucketIds.add(bucketId);
+            }
+        }
+        return bucketIds;
+    }
+
+
+    /**
      * Calculate all the correlations on a set of buckets
      *
      * @param buckets
@@ -400,6 +422,16 @@ public class Main {
                 ).iterator());
     }
 
+    /**
+     * Compute correlation of each combination of stocks from different dimensions recursively.
+     *
+     * @param compareThese Segment to compare to the other dimensions (one dimension)
+     * @param toAllCombinationsOfThese List of segments to compare to (the other dimensions)
+     * @param correlationFunction
+     * @param aggregationFunction
+     * @param reduceDimensionality
+     * @return List of all correlations on all combinations
+     */
     private static List<Tuple2<List<String>, Double>> compareAllPairs(
             List<Tuple2<String, List<Double>>> compareThese,
             List<List<Tuple2<String, List<Double>>>> toAllCombinationsOfThese,
@@ -408,6 +440,8 @@ public class Main {
             boolean reduceDimensionality) {
         List<Tuple2<List<String>, Double>> out = new ArrayList<>();
         // NB: All double comparisons are done, but not against itself
+        // TODO This is where we have to filter out duplicate comparisons in case we do not want all pairs
+        //  (e.g. when averaging the first x pairs)
 
         if (toAllCombinationsOfThese.isEmpty()) {
             // Done recursing, compute correlation
@@ -465,23 +499,25 @@ public class Main {
     }
 
     /**
-     * For an ID/index along a given dimension, generate all the bucket IDs that this index falls into, which is the
-     * ID of the buckets of the index on the given dimension paired with all combinations on the other dimensions
+     * Save a set of correlation results results to a file
      *
-     * @param segmentId
-     * @param onDimension
-     * @param dimensions
-     * @return
+     * @param result
+     * @param name
+     * @param server
+     * @param outputPath
+     * @param outputFolder
      */
-    private static List<Integer> getBucketNumbersForIdAlongDimension(int segmentId, int onDimension, int dimensions, int numSegments) {
-        List<Integer> bucketIds = new ArrayList<>();
-        // TODO Optimize?
-        for (int bucketId = 0; bucketId < Math.pow(numSegments, dimensions); bucketId++) {
-            if ((bucketId / (int) Math.pow(numSegments, onDimension)) % numSegments == segmentId) {
-                bucketIds.add(bucketId);
-            }
+    private void saveCorrelationResultsToFile(JavaPairRDD<List<String>, Double> result,
+                                              String name, Boolean server, String outputPath, String outputFolder
+    ) {
+        if (server) {
+            // On the server do not coalesce and do not use java Paths to support hdfs
+            result.saveAsTextFile(outputPath + outputFolder + name);
+        } else {
+            // On a local system coalesce before writing to file
+            result.coalesce(1).saveAsTextFile(
+                    Paths.get(outputPath, outputFolder, name).toUri().getPath());
         }
-        return bucketIds;
     }
 
     private JavaPairRDD<List<String>, Double> filterHighCorrelations(JavaPairRDD<List<String>, Double> correlations) {
@@ -494,7 +530,11 @@ public class Main {
         });
     }
 
-    // simple plot function
+    /**
+     * Simple plot of some time-series
+     *
+     * @param data
+     */
     private void plot(List<Tuple2<String, List<Double>>> data) {
         // Create Dataset to Plot
         XYSeriesCollection dataset = new XYSeriesCollection();
@@ -545,29 +585,6 @@ public class Main {
         frame.pack();
         frame.setVisible(true);
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-    }
-
-    /**
-     * Generate a set of dates between a start and end date: one date during daytime for every workday
-     *
-     * @param start
-     * @param end
-     * @return
-     */
-    static List<Date> generateDates(Date start, Date end) {
-        LinkedList<Date> dates = new LinkedList<>();
-        Date cur = start;
-        while (cur.before(end)) {
-            int weekday = cur.getDay();
-            if (weekday != 0 && weekday != 6) dates.add(cur);
-            cur = new Date(cur.getTime() + 86400000L);
-        }
-        dates.add(end);
-
-        // Sorting for safety purposes
-        dates.sort(Date::compareTo);
-
-        return dates;
     }
 
     public static void main(String[] args) throws ParseException {
