@@ -5,7 +5,7 @@ import scala.Tuple2;
 import java.util.ArrayList;
 import java.util.List;
 
-public class NormalAverageAggregation implements AggregationFunction {
+public class NormalAverageAggregation extends AggregationFunction {
 
 
     /**
@@ -14,7 +14,7 @@ public class NormalAverageAggregation implements AggregationFunction {
      * @return
      */
     @Override
-    public List<Tuple2<String, List<Double>>> aggregate(List<Tuple2<String, List<Double>>> in) {
+    public List<Tuple2<String, List<Double>>> singleAggregation(List<Tuple2<String, List<Double>>> in) {
         List<Tuple2<String, List<Double>>> aggregated = new ArrayList<>();
 
         for (Tuple2<String, List<Double>> stock : in) {
