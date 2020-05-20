@@ -51,10 +51,17 @@ public class Main {
     private final NormalAverageAggregation normalAverageAggregationFunction = new NormalAverageAggregation();
     private final NormalizationAggregation normalizationAggregationFunction = new NormalizationAggregation();
 
-    Main(String path, String outputPath, String source, List<Date> dates, String masterNode, String sparkDriver,
+    Main(String path, String outputPath, String source, Date start_date, Date end_date,
+         String masterNode, String sparkDriver,
          int minPartitions, int numSegments, int dimensions, boolean server, String[] exclusions) {
-        // Create sparkSession
 
+        // Define a new output folder based on date and time and copy the current config to it
+        String outputFolder = "out_" + new SimpleDateFormat("yyyy-MM-dd_HH-mm-ss").format(new Date());
+
+        // Copy config to output folder
+        copyConfig(outputPath, outputFolder, server);
+
+        // Create sparkSession
         if (server) {
             sparkSession = SparkSession.builder().appName("Main").getOrCreate();
         } else {
@@ -62,32 +69,20 @@ public class Main {
             sparkSession = SparkSession.builder().appName("Main").config(conf).getOrCreate();
         }
 
+        // Generate dates
+        List<Date> dates = generateDates(start_date, end_date);
         if (dates.size() < 2) throw new IllegalArgumentException("dates.size() should be at least 2");
 
-        // sorting for safety purposes
-        dates.sort(Date::compareTo);
+        // Read in data: For each stock, a list of observations
+        JavaPairRDD<String, List<Tuple6<Date, Double, Double, Double, Double, Long>>> parsed =
+                parse(path, source, start_date, end_date, minPartitions, exclusions);
 
-        // For each stock, a list of time and value combinations to compare
-        JavaPairRDD<String, List<Double>> timeSeries = prepareData(
-                parse(path, source, dates.get(0), dates.get(dates.size() - 1), minPartitions, exclusions), dates
-        );
+        // Prepare the data: Extract one preprocessed time-series for each stock
+        JavaPairRDD<String, List<Double>> timeSeries = prepareData(parsed, dates);
 
         if (DEBUGGING) {
             // For debugging, plot the values
-            List<Tuple2<String, List<Double>>> collected = timeSeries.collect();
-            plot(collected);
-        }
-
-        // Define a new output folder based on date and time and copy the current config to it
-        String outputFolder = "out_" + new SimpleDateFormat("yyyy-MM-dd_HH-mm-ss").format(new Date());
-        if (!server) {
-            try {
-                Files.createDirectories(Paths.get(outputPath, outputFolder));
-                Files.copy(Paths.get("config.properties"), Paths.get(outputPath, outputFolder, "config.properties"));
-            } catch (IOException e) {
-                e.printStackTrace();
-                System.exit(-1);
-            }
+            plot(timeSeries.collect());
         }
 
         // compute the PearsonCorrelation Function
@@ -106,6 +101,23 @@ public class Main {
         saveCorrelationResultsToFile(totalCorrelation, "TotalCorrelation", server, outputPath, outputFolder);
 
         sparkSession.stop();
+    }
+
+    /**
+     * Copy the config.properties file to an output folder
+     * @param outputPath
+     * @param server
+     */
+    private static void copyConfig(String outputPath, String outputFolder, boolean server) {
+        if (!server) {
+            try {
+                Files.createDirectories(Paths.get(outputPath, outputFolder));
+                Files.copy(Paths.get("config.properties"), Paths.get(outputPath, outputFolder, "config.properties"));
+            } catch (IOException e) {
+                e.printStackTrace();
+                System.exit(-1);
+            }
+        }
     }
 
     private void saveCorrelationResultsToFile(JavaPairRDD<List<String>, Double> result,
@@ -489,7 +501,12 @@ public class Main {
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
     }
 
-    // only create times during daytime on workdays
+    /**
+     * Generate a set of dates between a start and end date: one date during daytime for every workday
+     * @param start
+     * @param end
+     * @return
+     */
     static List<Date> generateDates(Date start, Date end) {
         LinkedList<Date> dates = new LinkedList<>();
         Date cur = start;
@@ -500,10 +517,13 @@ public class Main {
         }
         dates.add(end);
 
+        // Sorting for safety purposes
+        dates.sort(Date::compareTo);
+
         return dates;
     }
 
-    public static void main(String[] args) {
+    public static void main(String[] args) throws ParseException {
 
         // Load the config
         Properties config = new Properties();
@@ -515,6 +535,7 @@ public class Main {
             System.exit(-1);
         }
 
+        // Show read config variables to user
         System.out.println("Reading data from " + config.getProperty("data_path"));
         System.out.println("Using Hadoop directory " + config.getProperty("hadoop_path"));
         System.out.println("Saving output to " + config.getProperty("output_path"));
@@ -529,6 +550,8 @@ public class Main {
         System.out.println("Comparing on #dimensions: " + config.getProperty("dimensions"));
         System.out.println("Excluding files with keywords: " + config.getProperty("exclusions"));
 
+        // Parse the config
+        SimpleDateFormat format = new SimpleDateFormat(DATE_FORMAT);
         System.setProperty("hadoop.home.dir", config.getProperty("hadoop_path"));
         String path = config.getProperty("data_path");
         String outputPath = config.getProperty("output_path");
@@ -538,22 +561,13 @@ public class Main {
         int numSegments = Integer.parseInt(config.getProperty("num_segments"));
         boolean server = Boolean.parseBoolean(config.getProperty("server"));
         String source = config.getProperty("data_match"); // only considers stocks that contain `source` as a sub-string
-        String start_date = config.getProperty("start_date");
-        String end_date = config.getProperty("end_date");
+        Date start_date = format.parse(config.getProperty("start_date"));
+        Date end_date = format.parse(config.getProperty("end_date"));
         int dimensions = Integer.parseInt(config.getProperty("dimensions"));
         String[] exclusions = config.getProperty("exclusions").split(",");
 
-
-        List<Date> dates = null;
-        try {
-            SimpleDateFormat format = new SimpleDateFormat(DATE_FORMAT);
-            // 12:00 indicates that every measurement (on workdays) is taken at 12:00
-            dates = generateDates(format.parse(start_date), format.parse(end_date));
-        } catch (ParseException e) {
-            e.printStackTrace();
-        }
-
-        new Main(path, outputPath, source, dates, masterNode, sparkDriver, minPartitions, numSegments,
+        // Run the logic
+        new Main(path, outputPath, source, start_date, end_date, masterNode, sparkDriver, minPartitions, numSegments,
                 dimensions, server, exclusions);
     }
 }
