@@ -22,6 +22,7 @@ import scala.Tuple6;
 import javax.swing.*;
 import java.awt.*;
 import java.io.FileInputStream;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
@@ -53,7 +54,9 @@ public class Main {
 
     Main(String path, String outputPath, String source, Date start_date, Date end_date,
          String masterNode, String sparkDriver,
-         int minPartitions, int numSegments, int dimensions, boolean server, String[] exclusions) {
+         int minPartitions, int numSegments, int dimensions, boolean server, String[] exclusions,
+         int nTopBottom, int nSamples, long seed
+     ) {
 
         // Define a new output folder based on date and time and copy the current config to it
         String outputFolder = "out_" + new SimpleDateFormat("yyyy-MM-dd_HH-mm-ss").format(new Date());
@@ -96,7 +99,7 @@ public class Main {
                 averageAggregationFunction,
                 true
         );
-        saveCorrelationResultsToFile(pearsonCorrelations, "Pearson", server, outputPath, outputFolder);
+        saveCorrelationResultsToFile(pearsonCorrelations, "Pearson", server, outputPath, outputFolder, nTopBottom, nSamples, seed);
 
         // Compute the MutualInformation correlation
         JavaPairRDD<List<String>, Double> mutualCorrelations = calculateCorrelations(
@@ -105,7 +108,7 @@ public class Main {
                 averageAggregationFunction,
                 true
         );
-        saveCorrelationResultsToFile(mutualCorrelations, "MutualInformation", server, outputPath, outputFolder);
+        saveCorrelationResultsToFile(mutualCorrelations, "MutualInformation", server, outputPath, outputFolder, nTopBottom, nSamples, seed);
 
         // Compute the TotalCorrelation
         JavaPairRDD<List<String>, Double> totalCorrelation = calculateCorrelations(
@@ -114,7 +117,7 @@ public class Main {
                 identityAggregationFunction,
                 false
         );
-        saveCorrelationResultsToFile(totalCorrelation, "TotalCorrelation", server, outputPath, outputFolder);
+        saveCorrelationResultsToFile(totalCorrelation, "TotalCorrelation", server, outputPath, outputFolder, nTopBottom, nSamples, seed);
 
         sparkSession.stop();
     }
@@ -525,15 +528,34 @@ public class Main {
      * @param outputFolder
      */
     private void saveCorrelationResultsToFile(JavaPairRDD<List<String>, Double> result,
-                                              String name, Boolean server, String outputPath, String outputFolder
+        String name, Boolean server, String outputPath, String outputFolder, int nTopBottom, int nSamples, long seed
     ) {
-        if (server) {
-            // On the server do not coalesce and do not use java Paths to support hdfs
-            result.saveAsTextFile(outputPath + outputFolder + name);
-        } else {
-            // On a local system coalesce before writing to file
-            result.coalesce(1).saveAsTextFile(
-                    Paths.get(outputPath, outputFolder, name).toUri().getPath());
+        // Extract top and bottom nSamples
+        List<Tuple2<List<String>, Double>> top = result.takeOrdered(nTopBottom, new ComparatorDescending());
+        outputListToFile(top, server, name, outputPath, outputFolder, "-top" + nTopBottom);
+        List<Tuple2<List<String>, Double>> bottom = result.takeOrdered(nTopBottom, new ComparatorAscending());
+        outputListToFile(bottom, server, name, outputPath, outputFolder, "-bottom" + nTopBottom);
+        // Extract nSamples
+        List<Tuple2<List<String>, Double>> sampling = result.takeSample(false, nSamples, seed);
+        outputListToFile(sampling, server, name, outputPath, outputFolder, "-sampling" + nSamples);
+    }
+
+    private void outputListToFile(List<Tuple2<List<String>,Double>> result,
+        Boolean server, String name, String outputPath, String outputFolder, String extension
+    ) {
+        try {
+            FileWriter writer;
+            if (server)
+                writer = new FileWriter(outputPath + outputFolder + name + extension);
+            else
+                writer = new FileWriter(Paths.get(outputPath, outputFolder, name).toUri().getPath() + extension);
+            for (Tuple2<List<String>, Double> item : result) {
+                String stocks = String.join(",", item._1);
+                writer.write("(" + stocks + ")," + item._2 + System.lineSeparator());
+            }
+            writer.close();
+        } catch (Exception e) {
+
         }
     }
 
@@ -630,6 +652,9 @@ public class Main {
         System.out.println("Using end date: " + config.getProperty("end_date"));
         System.out.println("Comparing on #dimensions: " + config.getProperty("dimensions"));
         System.out.println("Excluding files with keywords: " + config.getProperty("exclusions"));
+        System.out.println("Saving top and bottom n samples: " + config.getProperty("n_top_bottom_stocks"));
+        System.out.println("Saving n random samples: " + config.getProperty("n_stock_samples"));
+        System.out.println("Random sampling seed: " + config.getProperty("sampling_seed"));
 
         // Parse the config
         SimpleDateFormat format = new SimpleDateFormat(DATE_FORMAT);
@@ -646,9 +671,12 @@ public class Main {
         Date end_date = format.parse(config.getProperty("end_date"));
         int dimensions = Integer.parseInt(config.getProperty("dimensions"));
         String[] exclusions = config.getProperty("exclusions").split(",");
+        int nTopBottom = Integer.parseInt(config.getProperty("n_top_bottom_stocks"));
+        int nSamples = Integer.parseInt(config.getProperty("n_stock_samples"));
+        long seed = Integer.parseInt(config.getProperty("sampling_seed"));
 
         // Run the logic
         new Main(path, outputPath, source, start_date, end_date, masterNode, sparkDriver, minPartitions, numSegments,
-                dimensions, server, exclusions);
+                dimensions, server, exclusions, nTopBottom, nSamples, seed);
     }
 }
