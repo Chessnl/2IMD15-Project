@@ -497,6 +497,8 @@ public class Main {
             if (stockNames.stream().distinct().count() == stockNames.size()) {
                 // All stocks have a different name
 
+                // TODO Here we need to handle taking/making different orderings of the given {compareThese} segments
+
                 // Aggregate (with or without reducing dimensionality)
                 List<Tuple2<String, List<Double>>> aggregated = reduceDimensionality ?
                         reduceDimensionality(compareThese, aggregationFunction) :
