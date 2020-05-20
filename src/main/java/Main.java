@@ -195,9 +195,13 @@ public class Main {
                 // Filter out ignored files
                 .filter(s -> Arrays.stream(exclusions).noneMatch(s._1::contains))
 
+                // Parse the timeseries out of the files
                 .mapToPair(s -> {
                     // Obtain stockName from filename
-                    String stockName = s._1.replaceAll("file:/" + path, "").replaceAll("_NoExpiry.txt", "").split("_", 2)[1];
+                    String stockName = s._1
+                            .replaceAll("file:/" + path, "")
+                            .replaceAll("_NoExpiry.txt", "")
+                            .split("_", 2)[1];
 
                     // Process lines in the file
                     List<Tuple6<Date, Double, Double, Double, Double, Long>> observations = new ArrayList<>();
@@ -211,16 +215,19 @@ public class Main {
                     double closing = 0;
                     long volume = 0;
 
-                    // creates [(time, opening, highest, lowest, closing, volume)] for the input file
-                    // merges observations which share a timestamp
+                    // Creates [(time, opening, highest, lowest, closing, volume)] for the input file
+                    // Merges observations which share a timestamp
                     for (String line : lines) {
                         if (line.isEmpty()) continue;
                         String[] entries = line.replaceAll("\\s+", "").split(",");
+
                         // Parse Date
                         Date newTime = format.parse(entries[0].trim() + "-" + entries[1].trim());
+
                         // Skip entries before startDate whilst end processing if entry date is after endDate
                         if (newTime.compareTo(startDate) < 0) continue;
                         if (newTime.compareTo(endDate) > 0) break;
+
                         // Process rest of the pair only if time is within the desired bound
                         if (!newTime.equals(time)) {
                             if (count > 0) {
@@ -263,7 +270,10 @@ public class Main {
                     }
 
                     return new Tuple2<>(stockName, observations);
-                });
+                })
+
+                // Combine multiple files of observations for the same stock together
+                .reduceByKey(ListUtils::union);
     }
 
     /**
@@ -278,12 +288,10 @@ public class Main {
             JavaPairRDD<String, List<Tuple6<Date, Double, Double, Double, Double, Long>>> rdd, List<Date> dates
     ) {
         return rdd
-                // creates for each stock (stock-name, [(time, opening, highest, lowest, closing, volume)]) sorted on time
-                .reduceByKey(ListUtils::union)
-                // only consider stocks which had at least 10 observations
+                // Only consider stocks which had at least 10 observations
                 .filter(s -> s._2.size() >= 10)
 
-                // interpolates data
+                // Interpolate data
                 .mapToPair(s -> {
                     // interpolates to obtain queried dates
                     // returns (file-name, [(time, price)])
@@ -340,6 +348,7 @@ public class Main {
             int numSegments,
             int dimensions
     ) {
+        // Give every stock a segment number
         JavaPairRDD<Integer, List<Tuple2<String, List<Double>>>> keyed = timeSeries.mapToPair(s -> {
             // Double mod as Java mods to (-numSegments, numSegments), but we want only [0, numSegments).
             int hash = ((s._1.hashCode() % numSegments) + numSegments) % numSegments;
@@ -348,10 +357,12 @@ public class Main {
             return new Tuple2<>(hash, value);
         });
 
+        // Collect stocks of the same segment together
         JavaPairRDD<Integer, List<Tuple2<String, List<Double>>>> segments = keyed.reduceByKey(ListUtils::union);
 
+        // Bucket the stocks along as many dimensions as wanted
         JavaPairRDD<Integer, // Bucket number
-                List< // List of segments, one of each dimension (List.size = dimentions)
+                List< // List of segments, one of each dimension (List.size = dimensions)
                         List<Tuple2< // List of stocks in this segment (List.size = numStocks / numSegments (on average))
                                 String, // Stock name
                                 List<Double> // Stock timeseries
@@ -368,7 +379,10 @@ public class Main {
                 }
             }
             return bucketAssignments.iterator();
-        }).reduceByKey(ListUtils::union);
+        })
+
+        // Collect comparison-tuples that are in the same bucket together
+        .reduceByKey(ListUtils::union);
 
         // Only consider buckets with as many values as dimensions in case not every segment has at least one stock
         buckets = buckets.filter(bucket -> bucket._2.size() == dimensions);
@@ -425,7 +439,7 @@ public class Main {
     /**
      * Compute correlation of each combination of stocks from different dimensions recursively.
      *
-     * @param compareThese Segment to compare to the other dimensions (one dimension)
+     * @param compareThese Values that are already taken off of dimensions that are to be compared to the other dimensions
      * @param toAllCombinationsOfThese List of segments to compare to (the other dimensions)
      * @param correlationFunction
      * @param aggregationFunction
@@ -446,7 +460,9 @@ public class Main {
         if (toAllCombinationsOfThese.isEmpty()) {
             // Done recursing, compute correlation
 
-            List<String> stockNames = compareThese.stream().map(stock -> stock._1).collect(Collectors.toCollection(ArrayList::new));
+            List<String> stockNames = compareThese.stream().map(stock -> stock._1)
+                    .collect(Collectors.toCollection(ArrayList::new));
+            // Only compute correlation for tuples where all stocks are different (where no stock appears twice)
             if (stockNames.stream().distinct().count() == stockNames.size()) {
                 // All stocks have a different name
 
@@ -461,6 +477,7 @@ public class Main {
                 out.add(new Tuple2<>(stockNames, correlation));
             }
         } else {
+            // Recurse further by taking off another dimension
             List<Tuple2<String, List<Double>>> segment = toAllCombinationsOfThese.get(0);
             toAllCombinationsOfThese.remove(segment);
             for (Tuple2<String, List<Double>> stock : segment) {
