@@ -10,6 +10,8 @@ import java.lang.Math;
 public class PearsonCorrelation implements CorrelationFunction {
     @Override
     public double getCorrelation(List<Tuple2<String, List<Double>>> stocks) {
+        if (stocks.size() != 2) throw new IllegalArgumentException(
+                "PearsonCorrelation requires exactly 2 vectors, got " + stocks.size());
         List<Double> first = stocks.get(0)._2;
         List<Double> second = stocks.get(1)._2;
 

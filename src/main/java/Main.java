@@ -82,18 +82,18 @@ public class Main {
         }
 
         // compute the PearsonCorrelation Function
-        JavaPairRDD<Tuple2<String, String>, Double> pearsonCorrelations =
+        JavaPairRDD<List<String>, Double> pearsonCorrelations =
                 calculateCorrelations(timeSeries, PearsonCorrelationFunction, numSegments, dimensions);
         saveCorrelationResultsToFile(pearsonCorrelations, "Pearson", server, outputPath, outputFolder);
 
         // compute the MutualInformation correlation
-        JavaPairRDD<Tuple2<String, String>, Double> mutualCorrelations =
+        JavaPairRDD<List<String>, Double> mutualCorrelations =
                 calculateCorrelations(timeSeries, MutualInformationFunction, numSegments, dimensions);
         saveCorrelationResultsToFile(mutualCorrelations, "MutualInformation", server, outputPath, outputFolder);
 
         // compute the TotalCorrelation
-        JavaPairRDD<Tuple2<String, String>, Double> totalCorrelation =
-                calculateCorrelations(timeSeries, TotalCorrelationFunction, numSegments);
+        JavaPairRDD<List<String>, Double> totalCorrelation =
+                calculateCorrelations(timeSeries, TotalCorrelationFunction, numSegments, dimensions);
         saveCorrelationResultsToFile(totalCorrelation, "TotalCorrelation", server, outputPath, outputFolder);
 
         if (DEBUGGING) {
@@ -364,7 +364,7 @@ public class Main {
             List<String> stockNames = compareThese.stream().map(stock -> stock._1).collect(Collectors.toCollection(ArrayList::new));
             if (stockNames.stream().distinct().count() == stockNames.size()) {
                 // All stocks have a different name
-                double correlation = correlationFunction.getCorrelation(compareThese.get(0)._2, compareThese.get(1)._2); // TODO Generalize using new getCorrelations contract
+                double correlation = correlationFunction.getCorrelation(compareThese);
                 out.add(new Tuple2<>(stockNames, correlation));
             }
             return out;

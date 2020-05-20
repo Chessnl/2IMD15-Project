@@ -75,3 +75,6 @@ config.properties
 
 # target
 target/
+
+# Data folder
+data/

@@ -11,6 +11,8 @@ public class MutualInformationCorrelation implements CorrelationFunction, Serial
 
     @Override
     public double getCorrelation(List<Tuple2<String, List<Double>>> stocks) {
+        if (stocks.size() < 2) throw new IllegalArgumentException(
+                "MutualInformationCorrelation requires at least 2 vectors, got " + stocks.size());
         int nrBuckets = 20;
         List<Double> first = stocks.get(0)._2;
         List<Double> second = stocks.get(1)._2;
