@@ -5,15 +5,22 @@ import scala.Tuple2;
 import java.util.ArrayList;
 import java.util.List;
 
-public class NormalizationAggregation implements AggregationFunction {
+public class NormalizationAggregation extends AggregationFunction {
 
+    public NormalizationAggregation() {
+        super();
+    }
+
+    public NormalizationAggregation(AggregationFunction prev) {
+        super(prev);
+    }
 
     /**
      * normalizes each stock price list independently to [0, 1] range
      * @return
      */
     @Override
-    public List<Tuple2<String, List<Double>>> aggregate(List<Tuple2<String, List<Double>>> in) {
+    public List<Tuple2<String, List<Double>>> singleAggregation(List<Tuple2<String, List<Double>>> in) {
         List<Tuple2<String, List<Double>>> aggregated = new ArrayList<>();
 
         for (Tuple2<String, List<Double>> stock : in) {

@@ -55,6 +55,8 @@ public class Main {
     private final MinAggregation minAggregationFunction = new MinAggregation();
     private final NormalAverageAggregation normalAverageAggregationFunction = new NormalAverageAggregation();
     private final NormalizationAggregation normalizationAggregationFunction = new NormalizationAggregation();
+    private final AverageAggregation normalThenAverageAggregationFunction =
+            new AverageAggregation(new NormalAverageAggregation());
 
     Main(String path, String outputPath, String source, Date start_date, Date end_date,
          String masterNode, String sparkDriver,
@@ -98,7 +100,7 @@ public class Main {
         JavaPairRDD<List<String>, Double> pearsonCorrelations = calculateCorrelations(
                 buckets,
                 pearsonCorrelationFunction,
-                averageAggregationFunction,
+                normalThenAverageAggregationFunction,
                 true
         );
         saveCorrelationResultsToFile(pearsonCorrelations, "Pearson", outputPath, outputFolder);
