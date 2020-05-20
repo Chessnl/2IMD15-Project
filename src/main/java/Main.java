@@ -515,8 +515,8 @@ public class Main {
 
                 out.add(new Tuple2<>(stockNames, correlation));
             } else {
-//                throw new IllegalStateException("A stock (not segment) combination for correlation calculation " +
-//                        "contained duplicates: " + stockNames);
+                throw new IllegalStateException("A stock (not segment) combination for correlation calculation " +
+                        "contained duplicates: " + stockNames);
             }
         } else {
             // Recurse further by taking off another dimension (which is 1 segment)
