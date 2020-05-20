@@ -85,19 +85,35 @@ public class Main {
             plot(timeSeries.collect());
         }
 
-        // compute the PearsonCorrelation Function
-        JavaPairRDD<List<String>, Double> pearsonCorrelations =
-                calculateCorrelations(timeSeries, pearsonCorrelationFunction, averageAggregationFunction, true, numSegments, dimensions);
+        // Compute the buckets
+        JavaPairRDD<Integer, List<List<Tuple2<String, List<Double>>>>> buckets =
+                computeBuckets(timeSeries, numSegments, dimensions);
+
+        // Compute the PearsonCorrelation Function
+        JavaPairRDD<List<String>, Double> pearsonCorrelations = calculateCorrelations(
+                buckets,
+                pearsonCorrelationFunction,
+                averageAggregationFunction,
+                true
+        );
         saveCorrelationResultsToFile(pearsonCorrelations, "Pearson", server, outputPath, outputFolder);
 
-        // compute the MutualInformation correlation
-        JavaPairRDD<List<String>, Double> mutualCorrelations =
-                calculateCorrelations(timeSeries, mutualInformationFunction, averageAggregationFunction, true, numSegments, dimensions);
+        // Compute the MutualInformation correlation
+        JavaPairRDD<List<String>, Double> mutualCorrelations = calculateCorrelations(
+                buckets,
+                mutualInformationFunction,
+                averageAggregationFunction,
+                true
+        );
         saveCorrelationResultsToFile(mutualCorrelations, "MutualInformation", server, outputPath, outputFolder);
 
-        // compute the TotalCorrelation
-        JavaPairRDD<List<String>, Double> totalCorrelation =
-                calculateCorrelations(timeSeries, totalCorrelationFunction, identityAggregationFunction, false, numSegments, dimensions);
+        // Compute the TotalCorrelation
+        JavaPairRDD<List<String>, Double> totalCorrelation = calculateCorrelations(
+                buckets,
+                totalCorrelationFunction,
+                identityAggregationFunction,
+                false
+        );
         saveCorrelationResultsToFile(totalCorrelation, "TotalCorrelation", server, outputPath, outputFolder);
 
         sparkSession.stop();
@@ -105,6 +121,7 @@ public class Main {
 
     /**
      * Copy the config.properties file to an output folder
+     *
      * @param outputPath
      * @param server
      */
@@ -120,6 +137,15 @@ public class Main {
         }
     }
 
+    /**
+     * Save a set of correlation results results to a file
+     *
+     * @param result
+     * @param name
+     * @param server
+     * @param outputPath
+     * @param outputFolder
+     */
     private void saveCorrelationResultsToFile(JavaPairRDD<List<String>, Double> result,
                                               String name, Boolean server, String outputPath, String outputFolder
     ) {
@@ -134,6 +160,7 @@ public class Main {
     }
 
     /**
+     * Parse the files of the stocks into a list of observations for each stock
      * (stockName, [(time, opening, highest, lowest, closing, volume)])
      *
      * @param path      location of stored data
@@ -299,17 +326,16 @@ public class Main {
     }
 
     /**
-     * Compare all two stocks against each other by applying the correlation function on each
+     * Divide a list of stocks into buckets for comparison along a given number of dimensions using a given number
+     * of segments
      *
      * @param timeSeries
-     * @param correlationFunction
+     * @param numSegments
+     * @param dimensions
      * @return
      */
-    private JavaPairRDD<List<String>, Double> calculateCorrelations(
+    private JavaPairRDD<Integer, List<List<Tuple2<String, List<Double>>>>> computeBuckets(
             JavaPairRDD<String, List<Double>> timeSeries,
-            CorrelationFunction correlationFunction,
-            AggregationFunction aggregationFunction,
-            boolean reduceDimensionality,
             int numSegments,
             int dimensions
     ) {
@@ -346,13 +372,32 @@ public class Main {
         // Only consider buckets with as many values as dimensions in case not every segment has at least one stock
         buckets = buckets.filter(bucket -> bucket._2.size() == dimensions);
 
-        return buckets
-                .flatMapToPair(s -> {
-                    int bucketId = s._1;
-                    List<List<Tuple2<String, List<Double>>>> segmentsInBucket = s._2;
-                    List<Tuple2<List<String>, Double>> out = new ArrayList<>();
-                    return compareAllPairs(new ArrayList<>(), segmentsInBucket, correlationFunction, aggregationFunction, reduceDimensionality).iterator();
-                });
+        return buckets;
+    }
+
+    /**
+     * Calculate all the correlations on a set of buckets
+     *
+     * @param buckets
+     * @param correlationFunction
+     * @param aggregationFunction
+     * @param reduceDimensionality
+     * @return
+     */
+    private JavaPairRDD<List<String>, Double> calculateCorrelations(
+            JavaPairRDD<Integer, List<List<Tuple2<String, List<Double>>>>> buckets,
+            CorrelationFunction correlationFunction,
+            AggregationFunction aggregationFunction,
+            boolean reduceDimensionality
+    ) {
+        return buckets.flatMapToPair(s ->
+                compareAllPairs(
+                        new ArrayList<>(),
+                        s._2,
+                        correlationFunction,
+                        aggregationFunction,
+                        reduceDimensionality
+                ).iterator());
     }
 
     private static List<Tuple2<List<String>, Double>> compareAllPairs(
@@ -396,6 +441,7 @@ public class Main {
 
     /**
      * Reduce the dimensionality of the to be compared pairs to two dimensions using some aggregation function
+     *
      * @param in
      * @param aggregationFunction
      * @return
@@ -414,7 +460,7 @@ public class Main {
                     "but aggregated to " + reducedFirstPart.size());
         }
         out.addAll(reducedFirstPart);
-        out.addAll(in.subList(in.size()-1, in.size()));
+        out.addAll(in.subList(in.size() - 1, in.size()));
         return out;
     }
 
@@ -503,6 +549,7 @@ public class Main {
 
     /**
      * Generate a set of dates between a start and end date: one date during daytime for every workday
+     *
      * @param start
      * @param end
      * @return
