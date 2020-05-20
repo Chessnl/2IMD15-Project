@@ -38,6 +38,11 @@ public class Main {
     private static final boolean DEBUGGING = false;
     final private SparkSession sparkSession;
 
+    // Settings
+    private static int numSegments;
+    private static int dimensions;
+    private static boolean server;
+
     // Choose a correlation function
     private final CorrelationFunction pearsonCorrelationFunction = new PearsonCorrelation();
     private final CorrelationFunction mutualInformationFunction = new MutualInformationCorrelation();
@@ -53,7 +58,7 @@ public class Main {
 
     Main(String path, String outputPath, String source, Date start_date, Date end_date,
          String masterNode, String sparkDriver,
-         int minPartitions, int numSegments, int dimensions, boolean server, String[] exclusions) {
+         int minPartitions, String[] exclusions) {
 
         // Define a new output folder based on date and time and copy the current config to it
         String outputFolder = "out_" + new SimpleDateFormat("yyyy-MM-dd_HH-mm-ss").format(new Date());
@@ -335,6 +340,13 @@ public class Main {
     }
 
     /**
+     * Get the segment number using a stock name
+     */
+    public static int getSegNumber(String stockName) {
+        return ((stockName.hashCode() % numSegments) + numSegments) % numSegments;
+    }
+
+    /**
      * Divide a list of stocks into buckets for comparison along a given number of dimensions using a given number
      * of segments
      *
@@ -351,7 +363,7 @@ public class Main {
         // Give every stock a segment number
         JavaPairRDD<Integer, List<Tuple2<String, List<Double>>>> keyed = timeSeries.mapToPair(s -> {
             // Double mod as Java mods to (-numSegments, numSegments), but we want only [0, numSegments).
-            int hash = ((s._1.hashCode() % numSegments) + numSegments) % numSegments;
+            int hash = getSegNumber(s._1);
             List<Tuple2<String, List<Double>>> value = new ArrayList<>();
             value.add(new Tuple2<>(s._1, s._2));
             return new Tuple2<>(hash, value);
@@ -484,9 +496,7 @@ public class Main {
             AggregationFunction aggregationFunction,
             boolean reduceDimensionality) {
         List<Tuple2<List<String>, Double>> out = new ArrayList<>();
-        // NB: All double comparisons are done, but not against itself
-        // TODO This is where we have to filter out duplicate comparisons in case we do not want all pairs
-        //  (e.g. when averaging the first x pairs)
+        // NB: No double comparisons are done, nor against itself
 
         if (toAllCombinationsOfThese.isEmpty()) {
             // Done recursing, compute correlation
@@ -508,15 +518,29 @@ public class Main {
                 double correlation = correlationFunction.getCorrelation(aggregated);
 
                 out.add(new Tuple2<>(stockNames, correlation));
+            } else {
+//                throw new IllegalStateException("A stock (not segment) combination for correlation calculation " +
+//                        "contained duplicates: " + stockNames);
             }
         } else {
-            // Recurse further by taking off another dimension
+            // Recurse further by taking off another dimension (which is 1 segment)
             List<Tuple2<String, List<Double>>> segment = toAllCombinationsOfThese.get(0);
             toAllCombinationsOfThese.remove(segment);
+            int segmentId = getSegNumber(segment.get(0)._1);
+            List<String> namesInSameSegment = compareThese.stream()
+                    .map(stock -> stock._1) // Get the names of the already selected stocks
+                    .filter(name -> getSegNumber(name) == segmentId) // Only take the names that originate from same seg
+                    .collect(Collectors.toList()); // Collect those names
             for (Tuple2<String, List<Double>> stock : segment) {
-                compareThese.add(stock);
-                out.addAll(compareAllPairs(compareThese, toAllCombinationsOfThese, correlationFunction, aggregationFunction, reduceDimensionality));
-                compareThese.remove(stock);
+                // If the to be considered segment is the same segment as the last segment,
+                // ensure its name is higher than the previous such that we only create one set per combination
+                // regardless of order (so only 123, not also 132)
+                if (namesInSameSegment.stream().allMatch(name -> name.compareTo(stock._1) < 0)) {
+                    compareThese.add(stock);
+                    out.addAll(compareAllPairs(compareThese, toAllCombinationsOfThese, correlationFunction,
+                            aggregationFunction, reduceDimensionality));
+                    compareThese.remove(stock);
+                }
             }
             toAllCombinationsOfThese.add(segment);
         }
@@ -672,16 +696,15 @@ public class Main {
         String masterNode = config.getProperty("master_node");
         String sparkDriver = config.getProperty("spark_driver");
         int minPartitions = Integer.parseInt(config.getProperty("min_partitions"));
-        int numSegments = Integer.parseInt(config.getProperty("num_segments"));
-        boolean server = Boolean.parseBoolean(config.getProperty("server"));
+        numSegments = Integer.parseInt(config.getProperty("num_segments"));
+        server = Boolean.parseBoolean(config.getProperty("server"));
         String source = config.getProperty("data_match"); // only considers stocks that contain `source` as a sub-string
         Date start_date = format.parse(config.getProperty("start_date"));
         Date end_date = format.parse(config.getProperty("end_date"));
-        int dimensions = Integer.parseInt(config.getProperty("dimensions"));
+        dimensions = Integer.parseInt(config.getProperty("dimensions"));
         String[] exclusions = config.getProperty("exclusions").split(",");
 
         // Run the logic
-        new Main(path, outputPath, source, start_date, end_date, masterNode, sparkDriver, minPartitions, numSegments,
-                dimensions, server, exclusions);
+        new Main(path, outputPath, source, start_date, end_date, masterNode, sparkDriver, minPartitions, exclusions);
     }
 }
