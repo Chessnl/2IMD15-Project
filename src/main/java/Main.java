@@ -358,16 +358,13 @@ public class Main {
     private JavaPairRDD<Integer, List<List<Tuple2<String, List<Double>>>>> computeBuckets(
             JavaPairRDD<String, List<Double>> timeSeries
     ) {
-        // Give every stock a segment number
-        JavaPairRDD<Integer, List<Tuple2<String, List<Double>>>> keyed = timeSeries.mapToPair(s -> {
-            int hash = getSegNumber(s._1);
-            List<Tuple2<String, List<Double>>> value = new ArrayList<>();
-            value.add(new Tuple2<>(s._1, s._2));
-            return new Tuple2<>(hash, value);
-        });
 
-        // Collect stocks of the same segment together
-        JavaPairRDD<Integer, List<Tuple2<String, List<Double>>>> segments = keyed.reduceByKey(ListUtils::union);
+        JavaPairRDD<Integer, List<Tuple2<String, List<Double>>>> segments = timeSeries
+                // Give every stock a segment number
+                .mapToPair(s -> new Tuple2<>(getSegNumber(s._1), Collections.singletonList(new Tuple2<>(s._1, s._2))))
+
+                // Collect stocks of the same segment together
+                .reduceByKey(ListUtils::union);
 
         // Bucket the stocks along as many dimensions as wanted
         JavaPairRDD<Integer, // Bucket number
@@ -384,9 +381,7 @@ public class Main {
                 List<Integer> bucketNumbers = new ArrayList<>();
                 addBucketNumbersForIdAlongDimension(bucketNumbers, new ArrayList<>(), segmentId, onDimension);
                 for (int bucketNumber : bucketNumbers) {
-                    List<List<Tuple2<String, List<Double>>>> bucketAssignment = new ArrayList<>();
-                    bucketAssignment.add(s._2);
-                    bucketAssignments.add(new Tuple2<>(bucketNumber, bucketAssignment));
+                    bucketAssignments.add(new Tuple2<>(bucketNumber, Collections.singletonList(s._2)));
                 }
             }
             return bucketAssignments.iterator();
@@ -406,6 +401,9 @@ public class Main {
      * the ID of the buckets of the index of the given dimension paired with all combinations on the other dimensions,
      * but only once for different ordering of the same set of segments that can fall into a bucket. Add all these
      * bucketIds to the given buckets array.
+     *
+     * note: makes copies of segments list before recursion as Spark multithreading makes removal from segments impossible
+     *
      * @param buckets Array to add the bucket numbers to
      * @param segments Recursively built set of segments that will make up 1 bucket
      * @param segmentId ID of the segment we want to fix
