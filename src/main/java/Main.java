@@ -499,19 +499,19 @@ public class Main {
      */
     private static List<Tuple2<String, List<Double>>> reduceDimensionality(List<Tuple2<String, List<Double>>> in,
                                                                            AggregationFunction aggregationFunction) {
-        // TODO Currently this splits off the last entry and aggregates the first section. Update to what we want
+        // Splits off the first entry and aggregates the last section.
         if (in.size() < 2) {
             throw new IllegalArgumentException("In order to reduce dimensionality, at least 2 values should be " +
                     "present, but only " + in.size() + " present.");
         }
         List<Tuple2<String, List<Double>>> out = new ArrayList<>();
-        List<Tuple2<String, List<Double>>> reducedFirstPart = aggregationFunction.aggregate(in);
-        if (reducedFirstPart.size() != 1) {
+        List<Tuple2<String, List<Double>>> reducedLastPart = aggregationFunction.aggregate(in.subList(1, in.size()));
+        if (reducedLastPart.size() != 1) {
             throw new IllegalArgumentException("Given aggregation function should aggregate to 1 value, " +
-                    "but aggregated to " + reducedFirstPart.size());
+                    "but aggregated to " + reducedLastPart.size());
         }
-        out.addAll(reducedFirstPart);
-        out.addAll(in.subList(in.size() - 1, in.size()));
+        out.addAll(reducedLastPart);
+        out.addAll(in.subList(0, 1));
         return out;
     }
 
