@@ -1,6 +1,7 @@
 import Correlations.CorrelationFunction;
 import Correlations.MutualInformationCorrelation;
 import Correlations.PearsonCorrelation;
+import Correlations.TotalCorrelation;
 import org.apache.commons.collections.ListUtils;
 import org.apache.spark.SparkConf;
 import org.apache.spark.api.java.JavaPairRDD;
@@ -39,9 +40,10 @@ public class Main {
     // Choose a correlation function
     private CorrelationFunction PearsonCorrelationFunction = new PearsonCorrelation();
     private CorrelationFunction MutualInformationFunction = new MutualInformationCorrelation();
+    private CorrelationFunction TotalCorrelationFunction = new TotalCorrelation();
 
     Main(String path, String outputPath, String source, List<Date> dates, String masterNode, String sparkDriver,
-         int minPartitions, int numSegments, int dimensions, boolean server) {
+         int minPartitions, int numSegments, int dimensions, boolean server, String[] exclusions) {
         // Create sparkSession
 
         if (server) {
@@ -58,7 +60,7 @@ public class Main {
 
         // For each stock, a list of time and value combinations to compare
         JavaPairRDD<String, List<Double>> timeSeries = prepareData(
-                parse(path, source, dates.get(0), dates.get(dates.size() - 1), minPartitions), dates
+                parse(path, source, dates.get(0), dates.get(dates.size() - 1), minPartitions, exclusions), dates
         );
 
         if (DEBUGGING) {
@@ -67,31 +69,32 @@ public class Main {
             plot(collected);
         }
 
-        // compute the PearsonCorrelation Function
-        JavaPairRDD<List<String>, Double> pearsonCorrelations =
-                calculateCorrelations(timeSeries, PearsonCorrelationFunction, numSegments, dimensions);
-
         // Define a new output folder based on date and time and copy the current config to it
         String outputFolder = "out_" + new SimpleDateFormat("yyyy-MM-dd_HH-mm-ss").format(new Date());
-        try {
-            Files.createDirectories(Paths.get(outputPath, outputFolder));
-            Files.copy(Paths.get("config.properties"), Paths.get(outputPath, outputFolder, "config.properties"));
-        } catch (IOException e) {
-            e.printStackTrace();
-            System.exit(-1);
+        if (!server) {
+            try {
+                Files.createDirectories(Paths.get(outputPath, outputFolder));
+                Files.copy(Paths.get("config.properties"), Paths.get(outputPath, outputFolder, "config.properties"));
+            } catch (IOException e) {
+                e.printStackTrace();
+                System.exit(-1);
+            }
         }
 
-        // Save the output correlation pairs to a file
-        pearsonCorrelations.coalesce(1).saveAsTextFile(
-                Paths.get(outputPath, outputFolder, "Pearson").toUri().getPath());
+        // compute the PearsonCorrelation Function
+        JavaPairRDD<Tuple2<String, String>, Double> pearsonCorrelations =
+                calculateCorrelations(timeSeries, PearsonCorrelationFunction, numSegments, dimensions);
+        saveCorrelationResultsToFile(pearsonCorrelations, "Pearson", server, outputPath, outputFolder);
 
         // compute the MutualInformation correlation
-        JavaPairRDD<List<String>, Double> mutualCorrelations =
+        JavaPairRDD<Tuple2<String, String>, Double> mutualCorrelations =
                 calculateCorrelations(timeSeries, MutualInformationFunction, numSegments, dimensions);
+        saveCorrelationResultsToFile(mutualCorrelations, "MutualInformation", server, outputPath, outputFolder);
 
-        // Save the output correlation pairs to a file
-        mutualCorrelations.coalesce(1).saveAsTextFile(
-                Paths.get(outputPath, outputFolder, "MutualInformation").toUri().getPath());
+        // compute the TotalCorrelation
+        JavaPairRDD<Tuple2<String, String>, Double> totalCorrelation =
+                calculateCorrelations(timeSeries, TotalCorrelationFunction, numSegments);
+        saveCorrelationResultsToFile(totalCorrelation, "TotalCorrelation", server, outputPath, outputFolder);
 
         if (DEBUGGING) {
             // Filter out the combinations that have a high correlation only
@@ -108,6 +111,19 @@ public class Main {
         sparkSession.stop();
     }
 
+    private void saveCorrelationResultsToFile(JavaPairRDD<List<String>, Double> result,
+                                              String name, Boolean server, String outputPath, String outputFolder
+    ) {
+        if (server) {
+            // On the server do not coalesce and do not use java Paths to support hdfs
+            result.saveAsTextFile(outputPath + outputFolder + name);
+        } else {
+            // On a local system coalesce before writing to file
+            result.coalesce(1).saveAsTextFile(
+                    Paths.get(outputPath, outputFolder, name).toUri().getPath());
+        }
+    }
+
     /**
      * (stockName, [(time, opening, highest, lowest, closing, volume)])
      *
@@ -117,7 +133,9 @@ public class Main {
      * @param endDate   only considers observations before startDate
      * @return (stockName, [ ( time, opening, highest, lowest, closing, volume)])
      */
-    private JavaPairRDD<String, List<Tuple6<Date, Double, Double, Double, Double, Long>>> parse(String path, String source, Date startDate, Date endDate, int minPartitions) {
+    private JavaPairRDD<String, List<Tuple6<Date, Double, Double, Double, Double, Long>>> parse(
+            String path, String source, Date startDate, Date endDate, int minPartitions, String[] exclusions
+    ) {
         // Parse start and end yearMonth
         SimpleDateFormat ymf = new SimpleDateFormat("yyyyMM");
         int startYearMonth = Integer.parseInt(ymf.format(startDate));
@@ -137,8 +155,15 @@ public class Main {
                 // load all files specified by path, stores as (path-to-file, file-content)
                 .wholeTextFiles(path + "{" + dates.toString() + "}_" + source + "_*", minPartitions).toJavaRDD()
 
-
                 .mapToPair(s -> {
+                    // TODO This is a filter, not a map
+                    // Ignore excluded files
+                    for (String exclusion : exclusions) {
+                        if (s._1.contains(exclusion)) {
+                            return new Tuple2<>("", null);
+                        }
+                    }
+
                     // Obtain stockName from filename
                     String stockName = s._1.replaceAll("file:/" + path, "").replaceAll("_NoExpiry.txt", "").split("_", 2)[1];
 
@@ -206,7 +231,8 @@ public class Main {
                     }
 
                     return new Tuple2<>(stockName, observations);
-                });
+                })
+                .filter(s -> !s._1.equals(""));
     }
 
     /**
@@ -217,7 +243,9 @@ public class Main {
      * @param dates [time]
      * @return (stockName, [ ( time, price - difference)])
      */
-    private JavaPairRDD<String, List<Double>> prepareData(JavaPairRDD<String, List<Tuple6<Date, Double, Double, Double, Double, Long>>> rdd, List<Date> dates) {
+    private JavaPairRDD<String, List<Double>> prepareData(
+            JavaPairRDD<String, List<Tuple6<Date, Double, Double, Double, Double, Long>>> rdd, List<Date> dates
+    ) {
         return rdd
                 // creates for each stock (stock-name, [(time, opening, highest, lowest, closing, volume)]) sorted on time
                 .reduceByKey(ListUtils::union)
@@ -474,6 +502,7 @@ public class Main {
         System.out.println("Using start date: " + config.getProperty("start_date"));
         System.out.println("Using end date: " + config.getProperty("end_date"));
         System.out.println("Comparing on #dimensions: " + config.getProperty("dimensions"));
+        System.out.println("Excluding files with keywords: " + config.getProperty("exclusions"));
 
         System.setProperty("hadoop.home.dir", config.getProperty("hadoop_path"));
         String path = config.getProperty("data_path");
@@ -487,6 +516,8 @@ public class Main {
         String start_date = config.getProperty("start_date");
         String end_date = config.getProperty("end_date");
         int dimensions = Integer.parseInt(config.getProperty("dimensions"));
+        String[] exclusions = config.getProperty("exclusions").split(",");
+
 
         List<Date> dates = null;
         try {
@@ -498,6 +529,6 @@ public class Main {
         }
 
         new Main(path, outputPath, source, dates, masterNode, sparkDriver, minPartitions, numSegments,
-                dimensions, server);
+                dimensions, server, exclusions);
     }
 }

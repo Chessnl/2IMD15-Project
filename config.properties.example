@@ -10,3 +10,4 @@ data_match=Amsterdam
 start_date=01/01/2020-12:00
 end_date=02/10/2020-12:00
 dimensions=2
+exclusions=Forex,Indices,NYSE_DIA

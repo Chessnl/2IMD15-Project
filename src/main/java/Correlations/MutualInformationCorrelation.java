@@ -10,8 +10,10 @@ import java.util.List;
 public class MutualInformationCorrelation implements CorrelationFunction, Serializable {
 
     @Override
-    public double getCorrelation(List<Double> first, List<Double> second) {
+    public double getCorrelation(List<Tuple2<String, List<Double>>> stocks) {
         int nrBuckets = 20;
+        List<Double> first = stocks.get(0)._2;
+        List<Double> second = stocks.get(1)._2;
 
         // Determine min and max
         Tuple2<Double, Double> minMaxX = findMinMax(first);
