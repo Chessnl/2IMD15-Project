@@ -64,7 +64,7 @@ public class Main {
         String outputFolder = "out_" + new SimpleDateFormat("yyyy-MM-dd_HH-mm-ss").format(new Date());
 
         // Copy config to output folder
-        copyConfig(outputPath, outputFolder, server);
+        copyConfig(outputPath, outputFolder);
 
         // Create sparkSession
         if (server) {
@@ -92,7 +92,7 @@ public class Main {
 
         // Compute the buckets
         JavaPairRDD<Integer, List<List<Tuple2<String, List<Double>>>>> buckets =
-                computeBuckets(timeSeries, numSegments, dimensions);
+                computeBuckets(timeSeries);
 
         // Compute the PearsonCorrelation Function
         JavaPairRDD<List<String>, Double> pearsonCorrelations = calculateCorrelations(
@@ -101,7 +101,7 @@ public class Main {
                 averageAggregationFunction,
                 true
         );
-        saveCorrelationResultsToFile(pearsonCorrelations, "Pearson", server, outputPath, outputFolder);
+        saveCorrelationResultsToFile(pearsonCorrelations, "Pearson", outputPath, outputFolder);
 
         // Compute the MutualInformation correlation
         JavaPairRDD<List<String>, Double> mutualCorrelations = calculateCorrelations(
@@ -110,7 +110,7 @@ public class Main {
                 averageAggregationFunction,
                 true
         );
-        saveCorrelationResultsToFile(mutualCorrelations, "MutualInformation", server, outputPath, outputFolder);
+        saveCorrelationResultsToFile(mutualCorrelations, "MutualInformation", outputPath, outputFolder);
 
         // Compute the TotalCorrelation
         JavaPairRDD<List<String>, Double> totalCorrelation = calculateCorrelations(
@@ -119,7 +119,7 @@ public class Main {
                 identityAggregationFunction,
                 false
         );
-        saveCorrelationResultsToFile(totalCorrelation, "TotalCorrelation", server, outputPath, outputFolder);
+        saveCorrelationResultsToFile(totalCorrelation, "TotalCorrelation", outputPath, outputFolder);
 
         sparkSession.stop();
     }
@@ -128,9 +128,8 @@ public class Main {
      * Copy the config.properties file to an output folder
      *
      * @param outputPath
-     * @param server
      */
-    private static void copyConfig(String outputPath, String outputFolder, boolean server) {
+    private static void copyConfig(String outputPath, String outputFolder) {
         if (!server) {
             try {
                 Files.createDirectories(Paths.get(outputPath, outputFolder));
@@ -343,6 +342,7 @@ public class Main {
      * Get the segment number using a stock name
      */
     public static int getSegNumber(String stockName) {
+        // Double mod as Java mods to (-numSegments, numSegments), but we want only [0, numSegments).
         return ((stockName.hashCode() % numSegments) + numSegments) % numSegments;
     }
 
@@ -351,18 +351,13 @@ public class Main {
      * of segments
      *
      * @param timeSeries
-     * @param numSegments
-     * @param dimensions
      * @return
      */
     private JavaPairRDD<Integer, List<List<Tuple2<String, List<Double>>>>> computeBuckets(
-            JavaPairRDD<String, List<Double>> timeSeries,
-            int numSegments,
-            int dimensions
+            JavaPairRDD<String, List<Double>> timeSeries
     ) {
         // Give every stock a segment number
         JavaPairRDD<Integer, List<Tuple2<String, List<Double>>>> keyed = timeSeries.mapToPair(s -> {
-            // Double mod as Java mods to (-numSegments, numSegments), but we want only [0, numSegments).
             int hash = getSegNumber(s._1);
             List<Tuple2<String, List<Double>>> value = new ArrayList<>();
             value.add(new Tuple2<>(s._1, s._2));
@@ -385,7 +380,7 @@ public class Main {
             for (int onDimension = 0; onDimension < dimensions; onDimension++) { // For every axis this stock is along
                 // Add it to all values for the other dimensions
                 List<Integer> bucketNumbers = new ArrayList<>();
-                addBucketNumbersForIdAlongDimension(bucketNumbers, new ArrayList<>(), segmentId, onDimension, dimensions, numSegments);
+                addBucketNumbersForIdAlongDimension(bucketNumbers, new ArrayList<>(), segmentId, onDimension);
                 for (int bucketNumber : bucketNumbers) {
                     List<List<Tuple2<String, List<Double>>>> bucketAssignment = new ArrayList<>();
                     bucketAssignment.add(s._2);
@@ -413,10 +408,9 @@ public class Main {
      * @param segments Recursively built set of segments that will make up 1 bucket
      * @param segmentId ID of the segment we want to fix
      * @param onDimension Dimension this segment needs to be fixed at
-     * @param dimensions Total number of dimensions
-     * @param numSegments Total number of segments the stocks are divided into
      */
-    private static void addBucketNumbersForIdAlongDimension(List<Integer> buckets, List<Integer> segments, int segmentId, int onDimension, int dimensions, int numSegments) {
+    private static void addBucketNumbersForIdAlongDimension(List<Integer> buckets, List<Integer> segments,
+                                                            int segmentId, int onDimension) {
         if (segments.size() == dimensions) {
             // Segments is currently a valid combination of segments
             // Compute bucket number
@@ -438,7 +432,7 @@ public class Main {
                 // We're at the dimension that this segment needs to be at, so only add that one
                 List<Integer> segmentsCopy = new ArrayList<>(segments);
                 segmentsCopy.add(segmentId);
-                addBucketNumbersForIdAlongDimension(buckets, segmentsCopy, segmentId, onDimension, dimensions, numSegments);
+                addBucketNumbersForIdAlongDimension(buckets, segmentsCopy, segmentId, onDimension);
             } else {
                 // Add all segments as an option for this dimension, but only the ones that are at least as high
                 // as the previous one (including equal) and ensure that if we are not yet at the dimension that needs
@@ -448,7 +442,7 @@ public class Main {
                 for (int seg = firstSegment; seg <= lastSegment; seg++) {
                     List<Integer> segmentsCopy = new ArrayList<>(segments);
                     segmentsCopy.add(seg);
-                    addBucketNumbersForIdAlongDimension(buckets, segmentsCopy, segmentId, onDimension, dimensions, numSegments);
+                    addBucketNumbersForIdAlongDimension(buckets, segmentsCopy, segmentId, onDimension);
                 }
             }
         }
@@ -577,12 +571,11 @@ public class Main {
      *
      * @param result
      * @param name
-     * @param server
      * @param outputPath
      * @param outputFolder
      */
     private void saveCorrelationResultsToFile(JavaPairRDD<List<String>, Double> result,
-                                              String name, Boolean server, String outputPath, String outputFolder
+                                              String name, String outputPath, String outputFolder
     ) {
         if (server) {
             // On the server do not coalesce and do not use java Paths to support hdfs
