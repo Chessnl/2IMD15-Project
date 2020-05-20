@@ -585,8 +585,23 @@ public class Main {
         List<Tuple2<List<String>, Double>> bottom = result.takeOrdered(nTopBottom, new ComparatorAscending());
         outputListToFile(bottom, server, name, outputPath, outputFolder, "-bottom" + nTopBottom);
         // Extract nSamples
-        List<Tuple2<List<String>, Double>> sampling = result.takeSample(false, nSamples, seed);
-        outputListToFile(sampling, server, name, outputPath, outputFolder, "-sampling" + nSamples);
+        if (server) {
+            if (nSamples >= 100) {
+                result.sample(false, nSamples / 100f, seed).saveAsTextFile(
+                        outputPath + outputFolder + name + "-sampling-" + nSamples);
+            } else {
+                result.saveAsTextFile(outputPath + outputFolder + name);
+            }
+        } else {
+            if (nSamples >= 100) {
+                result.sample(false, nSamples / 100f, seed).coalesce(1).saveAsTextFile(
+                        Paths.get(outputPath, outputFolder, name + "-sampling-" + nSamples).toUri().getPath());
+            } else {
+                result.coalesce(1).saveAsTextFile(Paths.get(outputPath, outputFolder, name).toUri().getPath());
+            }
+        }
+//        List<Tuple2<List<String>, Double>> sampling = result.takeSample(false, nSamples, seed);
+//        outputListToFile(sampling, server, name, outputPath, outputFolder, "-sampling" + nSamples);
     }
 
     private void outputListToFile(List<Tuple2<List<String>,Double>> result,

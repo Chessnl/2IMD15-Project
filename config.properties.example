@@ -12,5 +12,5 @@ end_date=02/10/2020-12:00
 dimensions=2
 exclusions=Forex,Indices,NYSE_DIA
 n_top_bottom_stocks=25
-n_stock_samples=5000
+n_stock_samples=1
 sampling_seed=123456789
