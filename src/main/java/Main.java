@@ -1,3 +1,4 @@
+import Aggregations.*;
 import Correlations.CorrelationFunction;
 import Correlations.MutualInformationCorrelation;
 import Correlations.PearsonCorrelation;
@@ -38,9 +39,17 @@ public class Main {
     final private SparkSession sparkSession;
 
     // Choose a correlation function
-    private CorrelationFunction PearsonCorrelationFunction = new PearsonCorrelation();
-    private CorrelationFunction MutualInformationFunction = new MutualInformationCorrelation();
-    private CorrelationFunction TotalCorrelationFunction = new TotalCorrelation();
+    private final CorrelationFunction pearsonCorrelationFunction = new PearsonCorrelation();
+    private final CorrelationFunction mutualInformationFunction = new MutualInformationCorrelation();
+    private final CorrelationFunction totalCorrelationFunction = new TotalCorrelation();
+
+    // Choose an aggregation function
+    private final AggregationFunction averageAggregationFunction = new AverageAggregation();
+    private final IdentityAggregation identityAggregationFunction = new IdentityAggregation();
+    private final MaxAggregation maxAggregationFunction = new MaxAggregation();
+    private final MinAggregation minAggregationFunction = new MinAggregation();
+    private final NormalAverageAggregation normalAverageAggregationFunction = new NormalAverageAggregation();
+    private final NormalizationAggregation normalizationAggregationFunction = new NormalizationAggregation();
 
     Main(String path, String outputPath, String source, List<Date> dates, String masterNode, String sparkDriver,
          int minPartitions, int numSegments, int dimensions, boolean server, String[] exclusions) {
@@ -83,17 +92,17 @@ public class Main {
 
         // compute the PearsonCorrelation Function
         JavaPairRDD<List<String>, Double> pearsonCorrelations =
-                calculateCorrelations(timeSeries, PearsonCorrelationFunction, numSegments, dimensions);
+                calculateCorrelations(timeSeries, pearsonCorrelationFunction, identityAggregationFunction, numSegments, dimensions);
         saveCorrelationResultsToFile(pearsonCorrelations, "Pearson", server, outputPath, outputFolder);
 
         // compute the MutualInformation correlation
         JavaPairRDD<List<String>, Double> mutualCorrelations =
-                calculateCorrelations(timeSeries, MutualInformationFunction, numSegments, dimensions);
+                calculateCorrelations(timeSeries, mutualInformationFunction, identityAggregationFunction, numSegments, dimensions);
         saveCorrelationResultsToFile(mutualCorrelations, "MutualInformation", server, outputPath, outputFolder);
 
         // compute the TotalCorrelation
         JavaPairRDD<List<String>, Double> totalCorrelation =
-                calculateCorrelations(timeSeries, TotalCorrelationFunction, numSegments, dimensions);
+                calculateCorrelations(timeSeries, totalCorrelationFunction, identityAggregationFunction, numSegments, dimensions);
         saveCorrelationResultsToFile(totalCorrelation, "TotalCorrelation", server, outputPath, outputFolder);
 
         if (DEBUGGING) {
@@ -155,15 +164,10 @@ public class Main {
                 // load all files specified by path, stores as (path-to-file, file-content)
                 .wholeTextFiles(path + "{" + dates.toString() + "}_" + source + "_*", minPartitions).toJavaRDD()
 
-                .mapToPair(s -> {
-                    // TODO This is a filter, not a map
-                    // Ignore excluded files
-                    for (String exclusion : exclusions) {
-                        if (s._1.contains(exclusion)) {
-                            return new Tuple2<>("", null);
-                        }
-                    }
+                // Filter out ignored files
+                .filter(s -> Arrays.stream(exclusions).noneMatch(s._1::contains))
 
+                .mapToPair(s -> {
                     // Obtain stockName from filename
                     String stockName = s._1.replaceAll("file:/" + path, "").replaceAll("_NoExpiry.txt", "").split("_", 2)[1];
 
@@ -231,8 +235,7 @@ public class Main {
                     }
 
                     return new Tuple2<>(stockName, observations);
-                })
-                .filter(s -> !s._1.equals(""));
+                });
     }
 
     /**
@@ -305,6 +308,7 @@ public class Main {
     private JavaPairRDD<List<String>, Double> calculateCorrelations(
             JavaPairRDD<String, List<Double>> timeSeries,
             CorrelationFunction correlationFunction,
+            AggregationFunction aggregationFunction,
             int numSegments,
             int dimensions
     ) {
@@ -317,7 +321,6 @@ public class Main {
         });
 
         JavaPairRDD<Integer, List<Tuple2<String, List<Double>>>> segments = keyed.reduceByKey(ListUtils::union);
-
 
         JavaPairRDD<Integer, // Bucket number
                 List< // List of segments, one of each dimension (List.size = dimentions)
@@ -347,14 +350,15 @@ public class Main {
                     int bucketId = s._1;
                     List<List<Tuple2<String, List<Double>>>> segmentsInBucket = s._2;
                     List<Tuple2<List<String>, Double>> out = new ArrayList<>();
-                    return compareAllPairs(new ArrayList<>(), segmentsInBucket, correlationFunction).iterator();
+                    return compareAllPairs(new ArrayList<>(), segmentsInBucket, correlationFunction, aggregationFunction).iterator();
                 });
     }
 
     private static List<Tuple2<List<String>, Double>> compareAllPairs(
             List<Tuple2<String, List<Double>>> compareThese,
             List<List<Tuple2<String, List<Double>>>> toAllCombinationsOfThese,
-            CorrelationFunction correlationFunction) {
+            CorrelationFunction correlationFunction,
+            AggregationFunction aggregationFunction) {
         List<Tuple2<List<String>, Double>> out = new ArrayList<>();
         // NB: All double comparisons are done, but not against itself
 
@@ -364,7 +368,10 @@ public class Main {
             List<String> stockNames = compareThese.stream().map(stock -> stock._1).collect(Collectors.toCollection(ArrayList::new));
             if (stockNames.stream().distinct().count() == stockNames.size()) {
                 // All stocks have a different name
-                double correlation = correlationFunction.getCorrelation(compareThese);
+
+                // Execute aggregation and correlation
+                double correlation = correlationFunction.getCorrelation(
+                        aggregationFunction.aggregate(compareThese));
                 out.add(new Tuple2<>(stockNames, correlation));
             }
             return out;
@@ -373,7 +380,7 @@ public class Main {
             toAllCombinationsOfThese.remove(segment);
             for (Tuple2<String, List<Double>> stock : segment) {
                 compareThese.add(stock);
-                out.addAll(compareAllPairs(compareThese, toAllCombinationsOfThese, correlationFunction));
+                out.addAll(compareAllPairs(compareThese, toAllCombinationsOfThese, correlationFunction, aggregationFunction));
                 compareThese.remove(stock);
             }
             toAllCombinationsOfThese.add(segment);
