@@ -11,6 +11,7 @@ public class NormalAverageAggregation implements AggregationFunction {
     /**
      * normalizes each stock price list independently by dividing by average.
      * this keeps percentual trends intact and has an average of 1.
+     * @return
      */
     @Override
     public List<Tuple2<String, List<Double>>> aggregate(List<Tuple2<String, List<Double>>> in) {

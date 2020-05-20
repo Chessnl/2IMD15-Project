@@ -10,6 +10,7 @@ public class NormalizationAggregation implements AggregationFunction {
 
     /**
      * normalizes each stock price list independently to [0, 1] range
+     * @return
      */
     @Override
     public List<Tuple2<String, List<Double>>> aggregate(List<Tuple2<String, List<Double>>> in) {

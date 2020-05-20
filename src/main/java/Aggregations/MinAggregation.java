@@ -12,7 +12,7 @@ public class MinAggregation implements AggregationFunction {
     public List<Tuple2<String, List<Double>>> aggregate(List<Tuple2<String, List<Double>>> in) {
         StringBuilder stockname = new StringBuilder();
         Double[] prices = new Double[in.get(0)._2.size()];
-        for (int i = 0; i < prices.length; i++) prices[i] = Double.MAX_VALUE;
+        Arrays.fill(prices, Double.MAX_VALUE);
 
         for (Tuple2<String, List<Double>> stock : in) {
             stockname.append("(").append(stock._1).append(") + ");
