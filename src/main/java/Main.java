@@ -92,30 +92,18 @@ public class Main {
 
         // compute the PearsonCorrelation Function
         JavaPairRDD<List<String>, Double> pearsonCorrelations =
-                calculateCorrelations(timeSeries, pearsonCorrelationFunction, identityAggregationFunction, numSegments, dimensions);
+                calculateCorrelations(timeSeries, pearsonCorrelationFunction, averageAggregationFunction, true, numSegments, dimensions);
         saveCorrelationResultsToFile(pearsonCorrelations, "Pearson", server, outputPath, outputFolder);
 
         // compute the MutualInformation correlation
         JavaPairRDD<List<String>, Double> mutualCorrelations =
-                calculateCorrelations(timeSeries, mutualInformationFunction, identityAggregationFunction, numSegments, dimensions);
+                calculateCorrelations(timeSeries, mutualInformationFunction, averageAggregationFunction, true, numSegments, dimensions);
         saveCorrelationResultsToFile(mutualCorrelations, "MutualInformation", server, outputPath, outputFolder);
 
         // compute the TotalCorrelation
         JavaPairRDD<List<String>, Double> totalCorrelation =
-                calculateCorrelations(timeSeries, totalCorrelationFunction, identityAggregationFunction, numSegments, dimensions);
+                calculateCorrelations(timeSeries, totalCorrelationFunction, identityAggregationFunction, false, numSegments, dimensions);
         saveCorrelationResultsToFile(totalCorrelation, "TotalCorrelation", server, outputPath, outputFolder);
-
-        if (DEBUGGING) {
-            // Filter out the combinations that have a high correlation only
-            JavaPairRDD<List<String>, Double> highCorrelations = filterHighCorrelations(pearsonCorrelations);
-
-            // Print the high correlations
-            List<Tuple2<List<String>, Double>> highCorrelationsCollected = highCorrelations.collect();
-            for (Tuple2<List<String>, Double> highCorrelationEntry : highCorrelationsCollected) {
-                System.out.println("High correlation of " + highCorrelationEntry._2() + " between " +
-                        highCorrelationEntry._1 + ".");
-            }
-        }
 
         sparkSession.stop();
     }
@@ -309,6 +297,7 @@ public class Main {
             JavaPairRDD<String, List<Double>> timeSeries,
             CorrelationFunction correlationFunction,
             AggregationFunction aggregationFunction,
+            boolean reduceDimensionality,
             int numSegments,
             int dimensions
     ) {
@@ -350,7 +339,7 @@ public class Main {
                     int bucketId = s._1;
                     List<List<Tuple2<String, List<Double>>>> segmentsInBucket = s._2;
                     List<Tuple2<List<String>, Double>> out = new ArrayList<>();
-                    return compareAllPairs(new ArrayList<>(), segmentsInBucket, correlationFunction, aggregationFunction).iterator();
+                    return compareAllPairs(new ArrayList<>(), segmentsInBucket, correlationFunction, aggregationFunction, reduceDimensionality).iterator();
                 });
     }
 
@@ -358,7 +347,8 @@ public class Main {
             List<Tuple2<String, List<Double>>> compareThese,
             List<List<Tuple2<String, List<Double>>>> toAllCombinationsOfThese,
             CorrelationFunction correlationFunction,
-            AggregationFunction aggregationFunction) {
+            AggregationFunction aggregationFunction,
+            boolean reduceDimensionality) {
         List<Tuple2<List<String>, Double>> out = new ArrayList<>();
         // NB: All double comparisons are done, but not against itself
 
@@ -369,23 +359,51 @@ public class Main {
             if (stockNames.stream().distinct().count() == stockNames.size()) {
                 // All stocks have a different name
 
-                // Execute aggregation and correlation
-                double correlation = correlationFunction.getCorrelation(
-                        aggregationFunction.aggregate(compareThese));
+                // Aggregate (with or without reducing dimensionality)
+                List<Tuple2<String, List<Double>>> aggregated = reduceDimensionality ?
+                        reduceDimensionality(compareThese, aggregationFunction) :
+                        aggregationFunction.aggregate(compareThese);
+
+                // Calculate correlation
+                double correlation = correlationFunction.getCorrelation(aggregated);
+
                 out.add(new Tuple2<>(stockNames, correlation));
             }
-            return out;
         } else {
             List<Tuple2<String, List<Double>>> segment = toAllCombinationsOfThese.get(0);
             toAllCombinationsOfThese.remove(segment);
             for (Tuple2<String, List<Double>> stock : segment) {
                 compareThese.add(stock);
-                out.addAll(compareAllPairs(compareThese, toAllCombinationsOfThese, correlationFunction, aggregationFunction));
+                out.addAll(compareAllPairs(compareThese, toAllCombinationsOfThese, correlationFunction, aggregationFunction, reduceDimensionality));
                 compareThese.remove(stock);
             }
             toAllCombinationsOfThese.add(segment);
-            return out;
         }
+        return out;
+    }
+
+    /**
+     * Reduce the dimensionality of the to be compared pairs to two dimensions using some aggregation function
+     * @param in
+     * @param aggregationFunction
+     * @return
+     */
+    private static List<Tuple2<String, List<Double>>> reduceDimensionality(List<Tuple2<String, List<Double>>> in,
+                                                                           AggregationFunction aggregationFunction) {
+        // TODO Currently this splits off the last entry and aggregates the first section. Update to what we want
+        if (in.size() < 2) {
+            throw new IllegalArgumentException("In order to reduce dimensionality, at least 2 values should be " +
+                    "present, but only " + in.size() + " present.");
+        }
+        List<Tuple2<String, List<Double>>> out = new ArrayList<>();
+        List<Tuple2<String, List<Double>>> reducedFirstPart = aggregationFunction.aggregate(in);
+        if (reducedFirstPart.size() != 1) {
+            throw new IllegalArgumentException("Given aggregation function should aggregate to 1 value, " +
+                    "but aggregated to " + reducedFirstPart.size());
+        }
+        out.addAll(reducedFirstPart);
+        out.addAll(in.subList(in.size()-1, in.size()));
+        return out;
     }
 
     /**
@@ -399,7 +417,7 @@ public class Main {
      */
     private static List<Integer> getBucketNumbersForIdAlongDimension(int segmentId, int onDimension, int dimensions, int numSegments) {
         List<Integer> bucketIds = new ArrayList<>();
-        // TODO Optimize
+        // TODO Optimize?
         for (int bucketId = 0; bucketId < Math.pow(numSegments, dimensions); bucketId++) {
             if ((bucketId / (int) Math.pow(numSegments, onDimension)) % numSegments == segmentId) {
                 bucketIds.add(bucketId);
