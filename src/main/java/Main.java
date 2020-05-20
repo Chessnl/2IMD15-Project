@@ -372,7 +372,9 @@ public class Main {
             List<Tuple2<Integer, List<List<Tuple2<String, List<Double>>>>>> bucketAssignments = new ArrayList<>();
             for (int onDimension = 0; onDimension < dimensions; onDimension++) { // For every axis this stock is along
                 // Add it to all values for the other dimensions
-                for (int bucketNumber : getBucketNumbersForIdAlongDimension(segmentId, onDimension, dimensions, numSegments)) {
+                List<Integer> bucketNumbers = new ArrayList<>();
+                addBucketNumbersForIdAlongDimension(bucketNumbers, new ArrayList<>(), segmentId, onDimension, dimensions, numSegments);
+                for (int bucketNumber : bucketNumbers) {
                     List<List<Tuple2<String, List<Double>>>> bucketAssignment = new ArrayList<>();
                     bucketAssignment.add(s._2);
                     bucketAssignments.add(new Tuple2<>(bucketNumber, bucketAssignment));
@@ -391,25 +393,54 @@ public class Main {
     }
 
     /**
-     * For an ID/index along a given dimension, generate all the bucket IDs that this index falls into, which is the
-     * ID of the buckets of the index on the given dimension paired with all combinations on the other dimensions
-     *
-     * @param segmentId
-     * @param onDimension
-     * @param dimensions
-     * @return
+     * For a segment ID/index along a given dimension, generate all the buckets IDs that this index falls into, which is
+     * the ID of the buckets of the index of the given dimension paired with all combinations on the other dimensions,
+     * but only once for different ordering of the same set of segments that can fall into a bucket. Add all these
+     * bucketIds to the given buckets array.
+     * @param buckets Array to add the bucket numbers to
+     * @param segments Recursively built set of segments that will make up 1 bucket
+     * @param segmentId ID of the segment we want to fix
+     * @param onDimension Dimension this segment needs to be fixed at
+     * @param dimensions Total number of dimensions
+     * @param numSegments Total number of segments the stocks are divided into
      */
-    private static List<Integer> getBucketNumbersForIdAlongDimension(int segmentId, int onDimension, int dimensions, int numSegments) {
-        List<Integer> bucketIds = new ArrayList<>();
-        // TODO Optimize?
-        for (int bucketId = 0; bucketId < Math.pow(numSegments, dimensions); bucketId++) {
-            if ((bucketId / (int) Math.pow(numSegments, onDimension)) % numSegments == segmentId) {
-                bucketIds.add(bucketId);
+    private static void addBucketNumbersForIdAlongDimension(List<Integer> buckets, List<Integer> segments, int segmentId, int onDimension, int dimensions, int numSegments) {
+        if (segments.size() == dimensions) {
+            // Segments is currently a valid combination of segments
+            // Compute bucket number
+            int bucketId = 0;
+            int lastSeg = -1;
+            for (int seg : segments) {
+                if (seg < lastSeg) {
+                    throw new IllegalStateException("Constructed segment list which is not in order: " + segments);
+                }
+                bucketId += seg;
+                bucketId *= numSegments;
+                lastSeg = seg;
+            }
+
+            // Add to the buckets list
+            buckets.add(bucketId);
+        } else {
+            if (segments.size() == onDimension) {
+                // We're at the dimension that this segment needs to be at, so only add that one
+                List<Integer> segmentsCopy = new ArrayList<>(segments);
+                segmentsCopy.add(segmentId);
+                addBucketNumbersForIdAlongDimension(buckets, segmentsCopy, segmentId, onDimension, dimensions, numSegments);
+            } else {
+                // Add all segments as an option for this dimension, but only the ones that are at least as high
+                // as the previous one (including equal) and ensure that if we are not yet at the dimension that needs
+                // to be segment {segmentId}, ensure that it's lower than that (including equal)
+                int firstSegment = segments.size() > 0 ? segments.get(segments.size()-1) : 0;
+                int lastSegment = segments.size() < onDimension ? segmentId : numSegments - 1;
+                for (int seg = firstSegment; seg <= lastSegment; seg++) {
+                    List<Integer> segmentsCopy = new ArrayList<>(segments);
+                    segmentsCopy.add(seg);
+                    addBucketNumbersForIdAlongDimension(buckets, segmentsCopy, segmentId, onDimension, dimensions, numSegments);
+                }
             }
         }
-        return bucketIds;
     }
-
 
     /**
      * Calculate all the correlations on a set of buckets
