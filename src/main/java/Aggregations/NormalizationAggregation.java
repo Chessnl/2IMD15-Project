@@ -7,6 +7,13 @@ import java.util.List;
 
 public class NormalizationAggregation extends AggregationFunction {
 
+    public NormalizationAggregation() {
+        super();
+    }
+
+    public NormalizationAggregation(AggregationFunction prev) {
+        super(prev);
+    }
 
     /**
      * normalizes each stock price list independently to [0, 1] range

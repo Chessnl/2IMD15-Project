@@ -8,6 +8,14 @@ import java.util.List;
 
 public class MaxAggregation extends AggregationFunction {
 
+    public MaxAggregation() {
+        super();
+    }
+
+    public MaxAggregation(AggregationFunction prev) {
+        super(prev);
+    }
+
     @Override
     public List<Tuple2<String, List<Double>>> singleAggregation(List<Tuple2<String, List<Double>>> in) {
         StringBuilder stockname = new StringBuilder();

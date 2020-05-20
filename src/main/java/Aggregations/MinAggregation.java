@@ -8,6 +8,14 @@ import java.util.List;
 
 public class MinAggregation extends AggregationFunction {
 
+    public MinAggregation() {
+        super();
+    }
+
+    public MinAggregation(AggregationFunction prev) {
+        super(prev);
+    }
+
     @Override
     public List<Tuple2<String, List<Double>>> singleAggregation(List<Tuple2<String, List<Double>>> in) {
         StringBuilder stockname = new StringBuilder();

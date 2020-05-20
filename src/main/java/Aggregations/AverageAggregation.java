@@ -8,6 +8,14 @@ import java.util.List;
 
 public class AverageAggregation extends AggregationFunction {
 
+    public AverageAggregation() {
+        super();
+    }
+
+    public AverageAggregation(AggregationFunction prev) {
+        super(prev);
+    }
+
     @Override
     public List<Tuple2<String, List<Double>>> singleAggregation(List<Tuple2<String, List<Double>>> in) {
         StringBuilder stockname = new StringBuilder();

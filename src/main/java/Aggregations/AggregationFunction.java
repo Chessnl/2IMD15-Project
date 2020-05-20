@@ -8,17 +8,15 @@ import java.util.List;
 
 public abstract class AggregationFunction implements Serializable {
 
-
     private final AggregationFunction previousOperation;
 
     public AggregationFunction() {
-        this.previousOperation = null;
+        previousOperation = null;
     }
 
-    public AggregationFunction(AggregationFunction previousOperation) {
-        this.previousOperation = previousOperation;
+    public AggregationFunction(AggregationFunction prev) {
+        previousOperation = prev;
     }
-
 
     /**
      * given a list consisting of stocks with n values, return a (potentially singleton list) list of stocks with n values

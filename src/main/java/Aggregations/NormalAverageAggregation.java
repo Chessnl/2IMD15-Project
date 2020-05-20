@@ -7,6 +7,13 @@ import java.util.List;
 
 public class NormalAverageAggregation extends AggregationFunction {
 
+    public NormalAverageAggregation() {
+        super();
+    }
+
+    public NormalAverageAggregation(AggregationFunction prev) {
+        super(prev);
+    }
 
     /**
      * normalizes each stock price list independently by dividing by average.
