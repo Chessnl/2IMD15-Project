@@ -12,6 +12,7 @@ public class AverageAggregation implements AggregationFunction {
     public List<Tuple2<String, List<Double>>> aggregate(List<Tuple2<String, List<Double>>> in) {
         StringBuilder stockname = new StringBuilder();
         Double[] prices = new Double[in.get(0)._2.size()];
+        Arrays.fill(prices, 0.);
 
         for (Tuple2<String, List<Double>> stock : in) {
             stockname.append("(").append(stock._1).append(") + ");
