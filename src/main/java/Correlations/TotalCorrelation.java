@@ -12,7 +12,8 @@ public class TotalCorrelation implements CorrelationFunction {
 
 
     public double getCorrelation(List<Tuple2<String, List<Double>>> stocks) {
-        if (stocks.size() < 2) throw new IllegalArgumentException("TotalCorrelation requires at least 2 vectors");
+        if (stocks.size() < 2) throw new IllegalArgumentException(
+                "TotalCorrelation requires at least 2 vectors, got " + stocks.size());
         stocks = new NormalizationAggregation().aggregate(stocks);
 
         int NUM_STOCKS = stocks.size();

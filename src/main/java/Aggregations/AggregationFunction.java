@@ -1,10 +1,11 @@
 package Aggregations;
 
+import scala.Serializable;
 import scala.Tuple2;
 
 import java.util.List;
 
-public interface AggregationFunction {
+public interface AggregationFunction extends Serializable {
 
     /**
      * given a list consisting of stocks with n values, return a (potentially singleton list) list of stocks with n values

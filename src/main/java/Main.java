@@ -1,3 +1,4 @@
+import Aggregations.*;
 import Correlations.CorrelationFunction;
 import Correlations.MutualInformationCorrelation;
 import Correlations.PearsonCorrelation;
@@ -28,6 +29,7 @@ import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.List;
+import java.util.stream.Collectors;
 
 public class Main {
 
@@ -37,12 +39,20 @@ public class Main {
     final private SparkSession sparkSession;
 
     // Choose a correlation function
-    private CorrelationFunction PearsonCorrelationFunction = new PearsonCorrelation();
-    private CorrelationFunction MutualInformationFunction = new MutualInformationCorrelation();
-    private CorrelationFunction TotalCorrelationFunction = new TotalCorrelation();
+    private final CorrelationFunction pearsonCorrelationFunction = new PearsonCorrelation();
+    private final CorrelationFunction mutualInformationFunction = new MutualInformationCorrelation();
+    private final CorrelationFunction totalCorrelationFunction = new TotalCorrelation();
+
+    // Choose an aggregation function
+    private final AggregationFunction averageAggregationFunction = new AverageAggregation();
+    private final IdentityAggregation identityAggregationFunction = new IdentityAggregation();
+    private final MaxAggregation maxAggregationFunction = new MaxAggregation();
+    private final MinAggregation minAggregationFunction = new MinAggregation();
+    private final NormalAverageAggregation normalAverageAggregationFunction = new NormalAverageAggregation();
+    private final NormalizationAggregation normalizationAggregationFunction = new NormalizationAggregation();
 
     Main(String path, String outputPath, String source, List<Date> dates, String masterNode, String sparkDriver,
-         int minPartitions, int numSegments, boolean server, String[] exclusions) {
+         int minPartitions, int numSegments, int dimensions, boolean server, String[] exclusions) {
         // Create sparkSession
 
         if (server) {
@@ -81,37 +91,25 @@ public class Main {
         }
 
         // compute the PearsonCorrelation Function
-        JavaPairRDD<Tuple2<String, String>, Double> pearsonCorrelations =
-                calculateCorrelations(timeSeries, PearsonCorrelationFunction, numSegments);
+        JavaPairRDD<List<String>, Double> pearsonCorrelations =
+                calculateCorrelations(timeSeries, pearsonCorrelationFunction, averageAggregationFunction, true, numSegments, dimensions);
         saveCorrelationResultsToFile(pearsonCorrelations, "Pearson", server, outputPath, outputFolder);
 
         // compute the MutualInformation correlation
-        JavaPairRDD<Tuple2<String, String>, Double> mutualCorrelations =
-                calculateCorrelations(timeSeries, MutualInformationFunction, numSegments);
+        JavaPairRDD<List<String>, Double> mutualCorrelations =
+                calculateCorrelations(timeSeries, mutualInformationFunction, averageAggregationFunction, true, numSegments, dimensions);
         saveCorrelationResultsToFile(mutualCorrelations, "MutualInformation", server, outputPath, outputFolder);
 
         // compute the TotalCorrelation
-        JavaPairRDD<Tuple2<String, String>, Double> totalCorrelation =
-                calculateCorrelations(timeSeries, TotalCorrelationFunction, numSegments);
+        JavaPairRDD<List<String>, Double> totalCorrelation =
+                calculateCorrelations(timeSeries, totalCorrelationFunction, identityAggregationFunction, false, numSegments, dimensions);
         saveCorrelationResultsToFile(totalCorrelation, "TotalCorrelation", server, outputPath, outputFolder);
-
-        if (DEBUGGING) {
-            // Filter out the combinations that have a high correlation only
-            JavaPairRDD<Tuple2<String, String>, Double> highCorrelations = filterHighCorrelations(pearsonCorrelations);
-
-            // Print the high correlations
-            List<Tuple2<Tuple2<String, String>, Double>> highCorrelationsCollected = highCorrelations.collect();
-            for (Tuple2<Tuple2<String, String>, Double> highCorrelationEntry : highCorrelationsCollected) {
-                System.out.println("High correlation of " + highCorrelationEntry._2() + " between "
-                        + highCorrelationEntry._1._1() + " and " + highCorrelationEntry._1._2() + ".");
-            }
-        }
 
         sparkSession.stop();
     }
 
-    private void saveCorrelationResultsToFile(JavaPairRDD<Tuple2<String, String>,
-            Double> result, String name, Boolean server, String outputPath, String outputFolder
+    private void saveCorrelationResultsToFile(JavaPairRDD<List<String>, Double> result,
+                                              String name, Boolean server, String outputPath, String outputFolder
     ) {
         if (server) {
             // On the server do not coalesce and do not use java Paths to support hdfs
@@ -154,14 +152,10 @@ public class Main {
                 // load all files specified by path, stores as (path-to-file, file-content)
                 .wholeTextFiles(path + "{" + dates.toString() + "}_" + source + "_*", minPartitions).toJavaRDD()
 
-                .mapToPair(s -> {
-                    // Ignore excluded files
-                    for (String exclusion : exclusions) {
-                        if (s._1.contains(exclusion)) {
-                            return new Tuple2<>("", null);
-                        }
-                    }
+                // Filter out ignored files
+                .filter(s -> Arrays.stream(exclusions).noneMatch(s._1::contains))
 
+                .mapToPair(s -> {
                     // Obtain stockName from filename
                     String stockName = s._1.replaceAll("file:/" + path, "").replaceAll("_NoExpiry.txt", "").split("_", 2)[1];
 
@@ -229,8 +223,7 @@ public class Main {
                     }
 
                     return new Tuple2<>(stockName, observations);
-                })
-                .filter(s -> !s._1.equals(""));
+                });
     }
 
     /**
@@ -270,7 +263,7 @@ public class Main {
                         if (i == 0) { // takes first observation if query time is before the first observation
                             prices.add(s._2.get(0)._5());
                         } else if (i == s._2.size()) { // take last observation if query time is after the last observation
-                            prices.add(s._2.get(s._2.size()-1)._5());
+                            prices.add(s._2.get(s._2.size() - 1)._5());
                         } else {
                             Tuple6<Date, Double, Double, Double, Double, Long> prev = s._2.get(i - 1);
                             Tuple6<Date, Double, Double, Double, Double, Long> next = s._2.get(i);
@@ -300,53 +293,145 @@ public class Main {
      * @param correlationFunction
      * @return
      */
-    private JavaPairRDD<Tuple2<String, String>, Double> calculateCorrelations(
+    private JavaPairRDD<List<String>, Double> calculateCorrelations(
             JavaPairRDD<String, List<Double>> timeSeries,
             CorrelationFunction correlationFunction,
-            int numSegments
+            AggregationFunction aggregationFunction,
+            boolean reduceDimensionality,
+            int numSegments,
+            int dimensions
     ) {
         JavaPairRDD<Integer, List<Tuple2<String, List<Double>>>> keyed = timeSeries.mapToPair(s -> {
-            int hash = s._1.hashCode() % numSegments;
+            // Double mod as Java mods to (-numSegments, numSegments), but we want only [0, numSegments).
+            int hash = ((s._1.hashCode() % numSegments) + numSegments) % numSegments;
             List<Tuple2<String, List<Double>>> value = new ArrayList<>();
             value.add(new Tuple2<>(s._1, s._2));
             return new Tuple2<>(hash, value);
         });
 
-        JavaPairRDD<Integer, List<Tuple2<String, List<Double>>>> bucketed = keyed.reduceByKey(ListUtils::union);
+        JavaPairRDD<Integer, List<Tuple2<String, List<Double>>>> segments = keyed.reduceByKey(ListUtils::union);
 
-        return bucketed.cartesian(bucketed) // Cartesian
-                .filter(s -> s._1._1 >= s._2._1) // Only compare buckets on one side of the diagonal (and on, as buckets are not just 1 value)
+        JavaPairRDD<Integer, // Bucket number
+                List< // List of segments, one of each dimension (List.size = dimentions)
+                        List<Tuple2< // List of stocks in this segment (List.size = numStocks / numSegments (on average))
+                                String, // Stock name
+                                List<Double> // Stock timeseries
+                                >>>> buckets = segments.flatMapToPair(s -> {
+            int segmentId = s._1; // The hash this segment is made of
+            System.out.println("Segment " + segmentId + " contains " + s._2.size() + " stocks.");
+            List<Tuple2<Integer, List<List<Tuple2<String, List<Double>>>>>> bucketAssignments = new ArrayList<>();
+            for (int onDimension = 0; onDimension < dimensions; onDimension++) { // For every axis this stock is along
+                // Add it to all values for the other dimensions
+                for (int bucketNumber : getBucketNumbersForIdAlongDimension(segmentId, onDimension, dimensions, numSegments)) {
+                    List<List<Tuple2<String, List<Double>>>> bucketAssignment = new ArrayList<>();
+                    bucketAssignment.add(s._2);
+                    bucketAssignments.add(new Tuple2<>(bucketNumber, bucketAssignment));
+                }
+            }
+            return bucketAssignments.iterator();
+        }).reduceByKey(ListUtils::union);
+
+        // Only consider buckets with as many values as dimensions in case not every segment has at least one stock
+        buckets = buckets.filter(bucket -> bucket._2.size() == dimensions);
+
+        return buckets
                 .flatMapToPair(s -> {
-                    List<Tuple2<String, List<Double>>> bucket1 = s._1._2;
-                    List<Tuple2<String, List<Double>>> bucket2 = s._2._2;
-
-                    List<Tuple2<Tuple2<String, String>, Double>> out = new ArrayList<>();
-                    for (Tuple2<String, List<Double>> stock1 : bucket1) {
-                        for (Tuple2<String, List<Double>> stock2 : bucket2) {
-                            String stock1Name = stock1._1;
-                            String stock2Name = stock2._1;
-                            // If a bucket is compared against itself, avoid double compares and compares of a
-                            // stock against the same stock
-                            if (!s._1._1.equals(s._2._1) || stock1Name.compareTo(stock2Name) > 0) {
-                                Double correlation = correlationFunction.getCorrelation(
-                                        Arrays.asList(stock1, stock2)
-                                );
-                                out.add(new Tuple2<>(new Tuple2<>(stock1Name, stock2Name), correlation));
-                            }
-                        }
-                    }
-                    return out.iterator();
+                    int bucketId = s._1;
+                    List<List<Tuple2<String, List<Double>>>> segmentsInBucket = s._2;
+                    List<Tuple2<List<String>, Double>> out = new ArrayList<>();
+                    return compareAllPairs(new ArrayList<>(), segmentsInBucket, correlationFunction, aggregationFunction, reduceDimensionality).iterator();
                 });
     }
 
-    private JavaPairRDD<Tuple2<String, String>, Double> filterHighCorrelations(
-            JavaPairRDD<Tuple2<String, String>, Double> correlations
-    ) {
+    private static List<Tuple2<List<String>, Double>> compareAllPairs(
+            List<Tuple2<String, List<Double>>> compareThese,
+            List<List<Tuple2<String, List<Double>>>> toAllCombinationsOfThese,
+            CorrelationFunction correlationFunction,
+            AggregationFunction aggregationFunction,
+            boolean reduceDimensionality) {
+        List<Tuple2<List<String>, Double>> out = new ArrayList<>();
+        // NB: All double comparisons are done, but not against itself
+
+        if (toAllCombinationsOfThese.isEmpty()) {
+            // Done recursing, compute correlation
+
+            List<String> stockNames = compareThese.stream().map(stock -> stock._1).collect(Collectors.toCollection(ArrayList::new));
+            if (stockNames.stream().distinct().count() == stockNames.size()) {
+                // All stocks have a different name
+
+                // Aggregate (with or without reducing dimensionality)
+                List<Tuple2<String, List<Double>>> aggregated = reduceDimensionality ?
+                        reduceDimensionality(compareThese, aggregationFunction) :
+                        aggregationFunction.aggregate(compareThese);
+
+                // Calculate correlation
+                double correlation = correlationFunction.getCorrelation(aggregated);
+
+                out.add(new Tuple2<>(stockNames, correlation));
+            }
+        } else {
+            List<Tuple2<String, List<Double>>> segment = toAllCombinationsOfThese.get(0);
+            toAllCombinationsOfThese.remove(segment);
+            for (Tuple2<String, List<Double>> stock : segment) {
+                compareThese.add(stock);
+                out.addAll(compareAllPairs(compareThese, toAllCombinationsOfThese, correlationFunction, aggregationFunction, reduceDimensionality));
+                compareThese.remove(stock);
+            }
+            toAllCombinationsOfThese.add(segment);
+        }
+        return out;
+    }
+
+    /**
+     * Reduce the dimensionality of the to be compared pairs to two dimensions using some aggregation function
+     * @param in
+     * @param aggregationFunction
+     * @return
+     */
+    private static List<Tuple2<String, List<Double>>> reduceDimensionality(List<Tuple2<String, List<Double>>> in,
+                                                                           AggregationFunction aggregationFunction) {
+        // TODO Currently this splits off the last entry and aggregates the first section. Update to what we want
+        if (in.size() < 2) {
+            throw new IllegalArgumentException("In order to reduce dimensionality, at least 2 values should be " +
+                    "present, but only " + in.size() + " present.");
+        }
+        List<Tuple2<String, List<Double>>> out = new ArrayList<>();
+        List<Tuple2<String, List<Double>>> reducedFirstPart = aggregationFunction.aggregate(in);
+        if (reducedFirstPart.size() != 1) {
+            throw new IllegalArgumentException("Given aggregation function should aggregate to 1 value, " +
+                    "but aggregated to " + reducedFirstPart.size());
+        }
+        out.addAll(reducedFirstPart);
+        out.addAll(in.subList(in.size()-1, in.size()));
+        return out;
+    }
+
+    /**
+     * For an ID/index along a given dimension, generate all the bucket IDs that this index falls into, which is the
+     * ID of the buckets of the index on the given dimension paired with all combinations on the other dimensions
+     *
+     * @param segmentId
+     * @param onDimension
+     * @param dimensions
+     * @return
+     */
+    private static List<Integer> getBucketNumbersForIdAlongDimension(int segmentId, int onDimension, int dimensions, int numSegments) {
+        List<Integer> bucketIds = new ArrayList<>();
+        // TODO Optimize?
+        for (int bucketId = 0; bucketId < Math.pow(numSegments, dimensions); bucketId++) {
+            if ((bucketId / (int) Math.pow(numSegments, onDimension)) % numSegments == segmentId) {
+                bucketIds.add(bucketId);
+            }
+        }
+        return bucketIds;
+    }
+
+    private JavaPairRDD<List<String>, Double> filterHighCorrelations(JavaPairRDD<List<String>, Double> correlations) {
         // TODO Filter out the combinations that have a high correlation only
 
         return correlations.filter(correlation -> {
             double value = correlation._2;
-            double threshold = 0.8; // TODO refine
+            double threshold = -Double.MAX_VALUE; // TODO refine
             return value > threshold;
         });
     }
@@ -370,8 +455,8 @@ public class Main {
                 "day number",
                 "value",
                 dataset,
-                PlotOrientation.VERTICAL ,
-                true , true , false
+                PlotOrientation.VERTICAL,
+                true, true, false
         );
 
         XYPlot plot = chart.getXYPlot();
@@ -441,6 +526,7 @@ public class Main {
         System.out.println("Matching with stocks " + config.getProperty("data_match"));
         System.out.println("Using start date: " + config.getProperty("start_date"));
         System.out.println("Using end date: " + config.getProperty("end_date"));
+        System.out.println("Comparing on #dimensions: " + config.getProperty("dimensions"));
         System.out.println("Excluding files with keywords: " + config.getProperty("exclusions"));
 
         System.setProperty("hadoop.home.dir", config.getProperty("hadoop_path"));
@@ -454,7 +540,8 @@ public class Main {
         String source = config.getProperty("data_match"); // only considers stocks that contain `source` as a sub-string
         String start_date = config.getProperty("start_date");
         String end_date = config.getProperty("end_date");
-        String exclusions = config.getProperty("exclusions");
+        int dimensions = Integer.parseInt(config.getProperty("dimensions"));
+        String[] exclusions = config.getProperty("exclusions").split(",");
 
 
         List<Date> dates = null;
@@ -466,6 +553,7 @@ public class Main {
             e.printStackTrace();
         }
 
-        new Main(path, outputPath, source, dates, masterNode, sparkDriver, minPartitions, numSegments, server, exclusions.split(","));
+        new Main(path, outputPath, source, dates, masterNode, sparkDriver, minPartitions, numSegments,
+                dimensions, server, exclusions);
     }
 }
