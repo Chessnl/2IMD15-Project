@@ -6,10 +6,18 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
-public class MaxAggregation implements AggregationFunction {
+public class MaxAggregation extends AggregationFunction {
+
+    public MaxAggregation() {
+        super();
+    }
+
+    public MaxAggregation(AggregationFunction prev) {
+        super(prev);
+    }
 
     @Override
-    public List<Tuple2<String, List<Double>>> aggregate(List<Tuple2<String, List<Double>>> in) {
+    public List<Tuple2<String, List<Double>>> singleAggregation(List<Tuple2<String, List<Double>>> in) {
         StringBuilder stockname = new StringBuilder();
         Double[] prices = new Double[in.get(0)._2.size()];
         Arrays.fill(prices, Double.MIN_VALUE);
