@@ -580,20 +580,22 @@ public class Main {
         String name,String outputPath, String outputFolder, int nTopBottom, int nSamples, long seed
     ) {
         // Extract top and bottom nSamples
-        List<Tuple2<List<String>, Double>> top = result.takeOrdered(nTopBottom, new ComparatorDescending());
-        outputListToFile(top, server, name, outputPath, outputFolder, "-top" + nTopBottom);
-        List<Tuple2<List<String>, Double>> bottom = result.takeOrdered(nTopBottom, new ComparatorAscending());
-        outputListToFile(bottom, server, name, outputPath, outputFolder, "-bottom" + nTopBottom);
+        if (nTopBottom > 0) {
+            List<Tuple2<List<String>, Double>> top = result.takeOrdered(nTopBottom, new ComparatorDescending());
+            outputListToFile(top, server, name, outputPath, outputFolder, "-top" + nTopBottom);
+            List<Tuple2<List<String>, Double>> bottom = result.takeOrdered(nTopBottom, new ComparatorAscending());
+            outputListToFile(bottom, server, name, outputPath, outputFolder, "-bottom" + nTopBottom);
+        }
         // Extract nSamples
         if (server) {
-            if (nSamples >= 100) {
+            if (nSamples < 100) {
                 result.sample(false, nSamples / 100f, seed).saveAsTextFile(
                         outputPath + outputFolder + name + "-sampling-" + nSamples);
             } else {
                 result.saveAsTextFile(outputPath + outputFolder + name);
             }
         } else {
-            if (nSamples >= 100) {
+            if (nSamples < 100) {
                 result.sample(false, nSamples / 100f, seed).coalesce(1).saveAsTextFile(
                         Paths.get(outputPath, outputFolder, name + "-sampling-" + nSamples).toUri().getPath());
             } else {
@@ -717,7 +719,7 @@ public class Main {
         System.out.println("Comparing on #dimensions: " + config.getProperty("dimensions"));
         System.out.println("Excluding files with keywords: " + config.getProperty("exclusions"));
         System.out.println("Saving top and bottom n samples: " + config.getProperty("n_top_bottom_stocks"));
-        System.out.println("Saving n random samples: " + config.getProperty("n_stock_samples"));
+        System.out.println("Saving n random samples (percentage 0-100): " + config.getProperty("n_stock_samples"));
         System.out.println("Random sampling seed: " + config.getProperty("sampling_seed"));
 
         // Parse the config
