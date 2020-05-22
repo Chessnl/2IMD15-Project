@@ -3,6 +3,7 @@ import Correlations.CorrelationFunction;
 import Correlations.MutualInformationCorrelation;
 import Correlations.PearsonCorrelation;
 import Correlations.TotalCorrelation;
+import com.google.common.collect.MinMaxPriorityQueue;
 import org.apache.commons.collections.ListUtils;
 import org.apache.spark.SparkConf;
 import org.apache.spark.api.java.JavaPairRDD;
@@ -623,14 +624,18 @@ public class Main {
         }
     }
 
-    private JavaPairRDD<List<String>, Double> filterHighCorrelations(JavaPairRDD<List<String>, Double> correlations) {
+    @SuppressWarnings("UnstableApiUsage")
+    private MinMaxPriorityQueue<Tuple2<List<String>, Double>> filterHighestCorrelations(JavaPairRDD<List<String>, Double> correlations, int nTopBottom) {
         // TODO Filter out the combinations that have a high correlation only
 
-        return correlations.filter(correlation -> {
-            double value = correlation._2;
-            double threshold = -Double.MAX_VALUE; // TODO refine
-            return value > threshold;
-        });
+        return correlations.aggregate(MinMaxPriorityQueue.orderedBy(new ComparatorDescending()).maximumSize(nTopBottom).create(),
+                (queue, newValue) -> {
+                    queue.add(newValue);
+                    return queue;
+                }, (s, t) -> {
+                    s.addAll(t);
+                    return s;
+                });
     }
 
     /**
