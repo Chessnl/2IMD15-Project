@@ -8,6 +8,7 @@ import org.apache.commons.collections.ListUtils;
 import org.apache.spark.SparkConf;
 import org.apache.spark.api.java.JavaPairRDD;
 import org.apache.spark.sql.SparkSession;
+import org.apache.spark.util.BoundedPriorityQueue;
 import org.jfree.chart.ChartFactory;
 import org.jfree.chart.ChartPanel;
 import org.jfree.chart.JFreeChart;
@@ -19,6 +20,8 @@ import org.jfree.data.xy.XYSeries;
 import org.jfree.data.xy.XYSeriesCollection;
 import scala.Tuple2;
 import scala.Tuple6;
+import scala.math.Ordering;
+import scala.math.PartialOrdering;
 
 import javax.swing.*;
 import java.awt.*;
@@ -582,10 +585,10 @@ public class Main {
     ) {
         // Extract top and bottom nSamplePercentage
         if (nTopBottom > 0) {
-            List<Tuple2<List<String>, Double>> top = result.takeOrdered(nTopBottom, new ComparatorDescending());
+            scala.collection.immutable.List<Tuple2<List<String>, Double>> top = filterHighestCorrelations(result, nTopBottom).toList();
             outputListToFile(top, name, outputPath, outputFolder, "-top" + nTopBottom);
-            List<Tuple2<List<String>, Double>> bottom = result.takeOrdered(nTopBottom, new ComparatorAscending());
-            outputListToFile(bottom, name, outputPath, outputFolder, "-bottom" + nTopBottom);
+//            List<Tuple2<List<String>, Double>> bottom = result.takeOrdered(nTopBottom, new ComparatorAscending());
+//            outputListToFile(bottom, name, outputPath, outputFolder, "-bottom" + nTopBottom);
         }
         // Extract a percentage of the data via sampling
         if (server) {
@@ -605,7 +608,7 @@ public class Main {
         }
     }
 
-    private void outputListToFile(List<Tuple2<List<String>,Double>> result,
+    private void outputListToFile(scala.collection.immutable.List<Tuple2<List<String>,Double>> result,
         String name, String outputPath, String outputFolder, String extension
     ) {
         try {
@@ -614,10 +617,15 @@ public class Main {
                 writer = new FileWriter(outputPath + outputFolder + name + extension);
             else
                 writer = new FileWriter(Paths.get(outputPath, outputFolder, name).toUri().getPath() + extension);
-            for (Tuple2<List<String>, Double> item : result) {
+            result.foreach(item -> {
                 String stocks = String.join(",", item._1);
-                writer.write("(" + stocks + ")," + item._2 + System.lineSeparator());
-            }
+                try {
+                    writer.write("(" + stocks + ")," + item._2 + System.lineSeparator());
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+                return null;
+            });
             writer.close();
         } catch (Exception e) {
 
@@ -625,15 +633,23 @@ public class Main {
     }
 
     @SuppressWarnings("UnstableApiUsage")
-    private MinMaxPriorityQueue<Tuple2<List<String>, Double>> filterHighestCorrelations(JavaPairRDD<List<String>, Double> correlations, int nTopBottom) {
+    private static BoundedPriorityQueue<Tuple2<List<String>, Double>> filterHighestCorrelations(JavaPairRDD<List<String>, Double> correlations, int nTopBottom) {
         // TODO Filter out the combinations that have a high correlation only
+        BoundedPriorityQueue<Tuple2<List<String>, Double>> res = new BoundedPriorityQueue(nTopBottom, new Ordering() {
+            @Override
+            public int compare(Object x, Object y) {
+                Tuple2<List<String>, Double> p1 = (Tuple2<List<String>, Double>)x;
+                Tuple2<List<String>, Double> p2 = (Tuple2<List<String>, Double>)y;
+                return p1._2.compareTo(p2._2);
+            }
+        });
 
-        return correlations.aggregate(MinMaxPriorityQueue.orderedBy(new ComparatorDescending()).maximumSize(nTopBottom).create(),
+        return correlations.aggregate(res,
                 (queue, newValue) -> {
-                    queue.add(newValue);
+                    queue.$plus$eq(newValue);
                     return queue;
                 }, (s, t) -> {
-                    s.addAll(t);
+                    s.$plus$plus$eq(t);
                     return s;
                 });
     }
