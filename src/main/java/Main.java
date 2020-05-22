@@ -577,37 +577,35 @@ public class Main {
      * @param outputFolder
      */
     private void saveCorrelationResultsToFile(JavaPairRDD<List<String>, Double> result,
-        String name,String outputPath, String outputFolder, int nTopBottom, int nSamples, long seed
+        String name,String outputPath, String outputFolder, int nTopBottom, int nSamplePercentage, long seed
     ) {
-        // Extract top and bottom nSamples
+        // Extract top and bottom nSamplePercentage
         if (nTopBottom > 0) {
             List<Tuple2<List<String>, Double>> top = result.takeOrdered(nTopBottom, new ComparatorDescending());
-            outputListToFile(top, server, name, outputPath, outputFolder, "-top" + nTopBottom);
+            outputListToFile(top, name, outputPath, outputFolder, "-top" + nTopBottom);
             List<Tuple2<List<String>, Double>> bottom = result.takeOrdered(nTopBottom, new ComparatorAscending());
-            outputListToFile(bottom, server, name, outputPath, outputFolder, "-bottom" + nTopBottom);
+            outputListToFile(bottom, name, outputPath, outputFolder, "-bottom" + nTopBottom);
         }
-        // Extract nSamples
+        // Extract a percentage of the data via sampling
         if (server) {
-            if (nSamples < 100) {
-                result.sample(false, nSamples / 100f, seed).saveAsTextFile(
-                        outputPath + outputFolder + name + "-sampling-" + nSamples);
+            if (nSamplePercentage < 100) {
+                result.sample(false, nSamplePercentage / 100f, seed).saveAsTextFile(
+                        outputPath + outputFolder + name + "-sampling-" + nSamplePercentage);
             } else {
                 result.saveAsTextFile(outputPath + outputFolder + name);
             }
         } else {
-            if (nSamples < 100) {
-                result.sample(false, nSamples / 100f, seed).coalesce(1).saveAsTextFile(
-                        Paths.get(outputPath, outputFolder, name + "-sampling-" + nSamples).toUri().getPath());
+            if (nSamplePercentage < 100) {
+                result.sample(false, nSamplePercentage / 100f, seed).coalesce(1).saveAsTextFile(
+                        Paths.get(outputPath, outputFolder, name + "-sampling-" + nSamplePercentage).toUri().getPath());
             } else {
                 result.coalesce(1).saveAsTextFile(Paths.get(outputPath, outputFolder, name).toUri().getPath());
             }
         }
-//        List<Tuple2<List<String>, Double>> sampling = result.takeSample(false, nSamples, seed);
-//        outputListToFile(sampling, server, name, outputPath, outputFolder, "-sampling" + nSamples);
     }
 
     private void outputListToFile(List<Tuple2<List<String>,Double>> result,
-        Boolean server, String name, String outputPath, String outputFolder, String extension
+        String name, String outputPath, String outputFolder, String extension
     ) {
         try {
             FileWriter writer;
