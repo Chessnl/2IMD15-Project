@@ -587,8 +587,6 @@ public class Main {
         if (nTopBottom > 0) {
             scala.collection.immutable.List<Tuple2<List<String>, Double>> top = filterHighestCorrelations(result, nTopBottom).toList();
             outputListToFile(top, name, outputPath, outputFolder, "-top" + nTopBottom);
-//            List<Tuple2<List<String>, Double>> bottom = result.takeOrdered(nTopBottom, new ComparatorAscending());
-//            outputListToFile(bottom, name, outputPath, outputFolder, "-bottom" + nTopBottom);
         }
         // Extract a percentage of the data via sampling
         if (server) {
@@ -617,6 +615,7 @@ public class Main {
                 writer = new FileWriter(outputPath + outputFolder + name + extension);
             else
                 writer = new FileWriter(Paths.get(outputPath, outputFolder, name).toUri().getPath() + extension);
+
             result.foreach(item -> {
                 String stocks = String.join(",", item._1);
                 try {
@@ -624,7 +623,7 @@ public class Main {
                 } catch (IOException e) {
                     e.printStackTrace();
                 }
-                return null;
+                return item;
             });
             writer.close();
         } catch (Exception e) {
@@ -635,14 +634,7 @@ public class Main {
     @SuppressWarnings("UnstableApiUsage")
     private static BoundedPriorityQueue<Tuple2<List<String>, Double>> filterHighestCorrelations(JavaPairRDD<List<String>, Double> correlations, int nTopBottom) {
         // TODO Filter out the combinations that have a high correlation only
-        BoundedPriorityQueue<Tuple2<List<String>, Double>> res = new BoundedPriorityQueue(nTopBottom, new Ordering() {
-            @Override
-            public int compare(Object x, Object y) {
-                Tuple2<List<String>, Double> p1 = (Tuple2<List<String>, Double>)x;
-                Tuple2<List<String>, Double> p2 = (Tuple2<List<String>, Double>)y;
-                return p1._2.compareTo(p2._2);
-            }
-        });
+        BoundedPriorityQueue<Tuple2<List<String>, Double>> res = new BoundedPriorityQueue(nTopBottom, new OrderingDescending());
 
         return correlations.aggregate(res,
                 (queue, newValue) -> {
