@@ -519,12 +519,10 @@ public class Main {
             if (stockNames.stream().distinct().count() == stockNames.size()) {
                 // All stocks have a different name
 
-                // TODO Here we need to handle taking/making different orderings of the given {compareThese} segments
-
                 // Aggregate (with or without reducing dimensionality)
-                List<Tuple2<String, List<Double>>> aggregated = reduceDimensionality ?
+                List<List<Tuple2<String, List<Double>>>> aggregated = reduceDimensionality ?
                         reduceDimensionality(compareThese, aggregationFunction) :
-                        aggregationFunction.aggregate(compareThese);
+                        Collections.singletonList(aggregationFunction.aggregate(compareThese));
 
                 // Calculate correlation
                 double correlation = correlationFunction.getCorrelation(aggregated);
@@ -562,28 +560,37 @@ public class Main {
     }
 
     /**
-     * Reduce the dimensionality of the to be compared pairs to two dimensions using some aggregation function
+     * Reduce the dimensionality of the to be compared pairs to two dimensions using some aggregation function.
+     * Also takes care of creating the different combinations that are possible.
      *
      * @param in
      * @param aggregationFunction
      * @return
      */
-    private static List<Tuple2<String, List<Double>>> reduceDimensionality(List<Tuple2<String, List<Double>>> in,
+    private static List<List<Tuple2<String, List<Double>>>> reduceDimensionality(List<Tuple2<String, List<Double>>> in,
                                                                            AggregationFunction aggregationFunction) {
         // Splits off the first entry and aggregates the last section.
         if (in.size() < 2) {
             throw new IllegalArgumentException("In order to reduce dimensionality, at least 2 values should be " +
                     "present, but only " + in.size() + " present.");
         }
-        List<Tuple2<String, List<Double>>> out = new ArrayList<>();
-        List<Tuple2<String, List<Double>>> reducedLastPart = aggregationFunction.aggregate(in.subList(1, in.size()));
-        if (reducedLastPart.size() != 1) {
-            throw new IllegalArgumentException("Given aggregation function should aggregate to 1 value, " +
-                    "but aggregated to " + reducedLastPart.size());
+
+        // Take correlation tuple orders such that each stock is the separate untouched one in one of them
+        List<List<Tuple2<String, List<Double>>>> correlationTuples = new ArrayList<>();
+        for (int last = 0; last < in.size(); last++) {
+            ArrayList<Tuple2<String, List<Double>>> inCopy = new ArrayList<>(in);
+            inCopy.remove(last);
+            List<Tuple2<String, List<Double>>> reducedLastPart = aggregationFunction.aggregate(inCopy);
+            if (reducedLastPart.size() != 1) {
+                throw new IllegalArgumentException("Given aggregation function should aggregate to 1 value, " +
+                        "but aggregated to " + reducedLastPart.size());
+            }
+            List<Tuple2<String, List<Double>>> correlationTuple = new ArrayList<>();
+            correlationTuple.addAll(reducedLastPart);
+            correlationTuple.add(in.get(last));
+            correlationTuples.add(correlationTuple);
         }
-        out.addAll(reducedLastPart);
-        out.addAll(in.subList(0, 1));
-        return out;
+        return correlationTuples;
     }
 
     /**
