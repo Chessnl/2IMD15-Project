@@ -4,7 +4,6 @@ import Correlations.MutualInformationCorrelation;
 import Correlations.PearsonCorrelation;
 import Correlations.TotalCorrelation;
 import org.apache.commons.collections.ListUtils;
-import org.apache.commons.compress.archivers.ar.ArArchiveEntry;
 import org.apache.spark.SparkConf;
 import org.apache.spark.api.java.JavaPairRDD;
 import org.apache.spark.sql.SparkSession;

@@ -1,9 +1,7 @@
 package Correlations;
 
-import scala.Serializable;
 import scala.Tuple2;
 
-import java.util.Date;
 import java.util.Iterator;
 import java.util.List;
 

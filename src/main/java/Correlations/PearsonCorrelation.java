@@ -2,10 +2,8 @@ package Correlations;
 
 import scala.Tuple2;
 
-import java.util.Date;
 import java.util.Iterator;
 import java.util.List;
-import java.lang.Math;
 
 public class PearsonCorrelation extends CorrelationFunction {
 
