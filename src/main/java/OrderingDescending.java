@@ -8,4 +8,9 @@ public class OrderingDescending  implements Ordering<Tuple2<List<String>, Double
     public int compare(Tuple2<List<java.lang.String>, java.lang.Double> x, Tuple2<List<java.lang.String>, java.lang.Double> y) {
         return x._2.compareTo(y._2);
     }
+
+    @Override
+    public boolean gt(Tuple2<List<java.lang.String>, java.lang.Double> x, Tuple2<List<java.lang.String>, java.lang.Double> y) {
+        return x._2 > y._2;
+    }
 }
