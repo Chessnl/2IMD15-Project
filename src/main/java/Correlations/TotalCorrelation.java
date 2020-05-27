@@ -31,9 +31,9 @@ public class TotalCorrelation extends CorrelationFunction {
         // stores for each bucket combination the amount of times it occured:
         // uses as key  x_1 * n^(m-1) + x_2 * n^(m-2) + ... + x_m * n^0
         // where x_i is the bucket number stock i has for this combination and m is the amount of stocks
-        HashMap<Integer, Integer> shared_bucket = new HashMap<>();
+        HashMap<Long, Integer> shared_bucket = new HashMap<>();
         for (int entry = 0; entry < NUM_ENTRIES; entry++) {
-            int key = 0;
+            long key = 0;
             for (Tuple2<String, List<Double>> stock : stocks) {
                 key *= this.NUM_BUCKETS;
                 key += price_to_bucket(stock._2.get(entry));
@@ -44,11 +44,11 @@ public class TotalCorrelation extends CorrelationFunction {
 
         // calculates correlation, only iterates for cases in which p(x_1, x_2, ... , x_m) > 0
         double correlation = 0;
-        for (int key : shared_bucket.keySet()) {
+        for (long key : shared_bucket.keySet()) {
             double p_shared = shared_bucket.get(key) / (double) NUM_ENTRIES; // p_shared = p(x_1, x_2, ... , x_m)
             double p_indep = 1; // p_indep = p(x_1) * p(x+2) * ... * p(x_m)
             for (int stock_id = NUM_STOCKS - 1; stock_id >= 0; stock_id--) {
-                p_indep *= indep_bucket[stock_id][key % this.NUM_BUCKETS] / (double) NUM_ENTRIES;
+                p_indep *= indep_bucket[stock_id][(int) (key % this.NUM_BUCKETS)] / (double) NUM_ENTRIES;
                 key /= this.NUM_BUCKETS;
             }
             correlation += p_shared * Math.log(p_shared / p_indep);
