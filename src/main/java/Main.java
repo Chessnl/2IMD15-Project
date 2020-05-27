@@ -41,7 +41,6 @@ public class Main {
     final private SparkSession sparkSession;
 
     // Settings
-    private static int nTopBottom;
     private static int dimensions;
 
     // Choose a correlation function
@@ -61,7 +60,7 @@ public class Main {
 
     Main(String path, String outputPath, String source, Date start_date, Date end_date,
          String masterNode, String sparkDriver,
-         int minPartitions, int numSegments, boolean server, String[] exclusions, int nSamples, long seed,
+         int minPartitions, int numSegments, boolean server, String[] exclusions, int nSamples, long seed, int nTopBottom,
          double pearsonThreshold, double mutualInformationThreshold, double totalCorrelationThreshold
      ) {
         // Set correlation functions with tresholds
@@ -109,7 +108,8 @@ public class Main {
                 pearsonCorrelationFunction,
                 normalThenAverageAggregationFunction,
                 true,
-                numSegments
+                numSegments,
+                nTopBottom
         );
         saveCorrelationResultsToFile(pearsonCorrelations, "Pearson", outputPath, outputFolder, nTopBottom, nSamples, seed, server);
 
@@ -119,7 +119,8 @@ public class Main {
                 mutualInformationFunction,
                 normalThenAverageAggregationFunction,
                 true,
-                numSegments
+                numSegments,
+                nTopBottom
         );
         saveCorrelationResultsToFile(mutualCorrelations, "MutualInformation", outputPath, outputFolder, nTopBottom, nSamples, seed, server);
 
@@ -129,7 +130,8 @@ public class Main {
                 totalCorrelationFunction,
                 identityAggregationFunction,
                 false,
-                numSegments
+                numSegments,
+                nTopBottom
         );
         saveCorrelationResultsToFile(totalCorrelation, "TotalCorrelation", outputPath, outputFolder, nTopBottom, nSamples, seed, server);
 
@@ -472,7 +474,8 @@ public class Main {
             CorrelationFunction correlationFunction,
             AggregationFunction aggregationFunction,
             boolean reduceDimensionality,
-            int numSegments
+            int numSegments,
+            int nTopBottom
     ) {
         return buckets.flatMapToPair(s -> {
             List<Tuple2<List<String>, Double>> out = new ArrayList();
@@ -482,7 +485,8 @@ public class Main {
                     correlationFunction,
                     aggregationFunction,
                     reduceDimensionality,
-                    numSegments
+                    numSegments,
+                    nTopBottom
             );
             // Add to out list
             queue.foreach(item -> {
@@ -509,7 +513,9 @@ public class Main {
             List<List<Tuple2<String, List<Double>>>> toAllCombinationsOfThese,
             CorrelationFunction correlationFunction,
             AggregationFunction aggregationFunction,
-            boolean reduceDimensionality, int numSegments) {
+            boolean reduceDimensionality,
+            int numSegments,
+            int nTopBottom) {
         BoundedPriorityQueue<Tuple2<List<String>, Double>> out = new BoundedPriorityQueue(nTopBottom, new OrderingDescending());
         // NB: No double comparisons are done, nor against itself
 
@@ -555,7 +561,7 @@ public class Main {
                 if (namesInSameSegment.stream().allMatch(name -> name.compareTo(stock._1) < 0)) {
                     compareThese.add(stock);
                     out.$plus$plus$eq(compareAllPairs(compareThese, toAllCombinationsOfThese, correlationFunction,
-                            aggregationFunction, reduceDimensionality, numSegments));
+                            aggregationFunction, reduceDimensionality, numSegments, nTopBottom));
                     compareThese.remove(stock);
                 }
             }
@@ -778,7 +784,7 @@ public class Main {
         Date end_date = format.parse(config.getProperty("end_date"));
         dimensions = Integer.parseInt(config.getProperty("dimensions"));
         String[] exclusions = config.getProperty("exclusions").split(",");
-        nTopBottom = Integer.parseInt(config.getProperty("n_top_bottom_stocks"));
+        int nTopBottom = Integer.parseInt(config.getProperty("n_top_bottom_stocks"));
         int nSamples = Integer.parseInt(config.getProperty("n_stock_samples"));
         long seed = Integer.parseInt(config.getProperty("sampling_seed"));
         double pearsonThreshold = Double.parseDouble(config.getProperty("threshold_pearson"));
@@ -787,7 +793,7 @@ public class Main {
 
         // Run the logic
         new Main(path, outputPath, source, start_date, end_date, masterNode, sparkDriver, minPartitions, numSegments,
-                server, exclusions, nSamples, seed,
+                server, exclusions, nSamples, seed, nTopBottom,
                 pearsonThreshold, mutualInformationThreshold, totalCorrelationThreshold);
     }
 }
