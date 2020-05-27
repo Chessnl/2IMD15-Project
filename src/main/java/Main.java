@@ -95,9 +95,9 @@ public class Main {
             plot(timeSeries.collect());
         }
 
-        // Compute the buckets
+        // Compute the buckets, repartition them so each bucket has its own partition
         JavaPairRDD<Integer, List<List<Tuple2<String, List<Double>>>>> buckets =
-                computeBuckets(timeSeries, numSegments, dimensions);
+                computeBuckets(timeSeries, numSegments, dimensions).repartition((int) Math.pow(numSegments, dimensions));
 
         // Compute the PearsonCorrelation Function
         JavaPairRDD<List<String>, Double> pearsonCorrelations = calculateCorrelations(
