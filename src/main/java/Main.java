@@ -42,7 +42,6 @@ public class Main {
 
     // Settings
     private static int nTopBottom;
-    private static int numSegments;
     private static int dimensions;
     private static boolean server;
 
@@ -63,7 +62,7 @@ public class Main {
 
     Main(String path, String outputPath, String source, Date start_date, Date end_date,
          String masterNode, String sparkDriver,
-         int minPartitions, String[] exclusions, int nSamples, long seed,
+         int minPartitions, int numSegments, String[] exclusions, int nSamples, long seed,
          double pearsonThreshold, double mutualInformationThreshold, double totalCorrelationThreshold
      ) {
         // Set correlation functions with tresholds
@@ -103,14 +102,15 @@ public class Main {
 
         // Compute the buckets
         JavaPairRDD<Integer, List<List<Tuple2<String, List<Double>>>>> buckets =
-                computeBuckets(timeSeries);
+                computeBuckets(timeSeries, numSegments);
 
         // Compute the PearsonCorrelation Function
         JavaPairRDD<List<String>, Double> pearsonCorrelations = calculateCorrelations(
                 buckets,
                 pearsonCorrelationFunction,
                 normalThenAverageAggregationFunction,
-                true
+                true,
+                numSegments
         );
         saveCorrelationResultsToFile(pearsonCorrelations, "Pearson", outputPath, outputFolder, nTopBottom, nSamples, seed);
 
@@ -119,7 +119,8 @@ public class Main {
                 buckets,
                 mutualInformationFunction,
                 normalThenAverageAggregationFunction,
-                true
+                true,
+                numSegments
         );
         saveCorrelationResultsToFile(mutualCorrelations, "MutualInformation", outputPath, outputFolder, nTopBottom, nSamples, seed);
 
@@ -128,7 +129,8 @@ public class Main {
                 buckets,
                 totalCorrelationFunction,
                 identityAggregationFunction,
-                false
+                false,
+                numSegments
         );
         saveCorrelationResultsToFile(totalCorrelation, "TotalCorrelation", outputPath, outputFolder, nTopBottom, nSamples, seed);
 
@@ -352,7 +354,7 @@ public class Main {
     /**
      * Get the segment number using a stock name
      */
-    public static int getSegNumber(String stockName) {
+    public static int getSegNumber(String stockName, int numSegments) {
         // Double mod as Java mods to (-numSegments, numSegments), but we want only [0, numSegments).
         return ((stockName.hashCode() % numSegments) + numSegments) % numSegments;
     }
@@ -365,12 +367,12 @@ public class Main {
      * @return
      */
     private JavaPairRDD<Integer, List<List<Tuple2<String, List<Double>>>>> computeBuckets(
-            JavaPairRDD<String, List<Double>> timeSeries
+            JavaPairRDD<String, List<Double>> timeSeries, int numSegments
     ) {
 
         JavaPairRDD<Integer, List<Tuple2<String, List<Double>>>> segments = timeSeries
                 // Give every stock a segment number
-                .mapToPair(s -> new Tuple2<>(getSegNumber(s._1), Collections.singletonList(new Tuple2<>(s._1, s._2))))
+                .mapToPair(s -> new Tuple2<>(getSegNumber(s._1, numSegments), Collections.singletonList(new Tuple2<>(s._1, s._2))))
 
                 // Collect stocks of the same segment together
                 .reduceByKey(ListUtils::union);
@@ -388,7 +390,7 @@ public class Main {
             for (int onDimension = 0; onDimension < dimensions; onDimension++) { // For every axis this stock is along
                 // Add it to all values for the other dimensions
                 List<Integer> bucketNumbers = new ArrayList<>();
-                addBucketNumbersForIdAlongDimension(bucketNumbers, new ArrayList<>(), segmentId, onDimension);
+                addBucketNumbersForIdAlongDimension(bucketNumbers, new ArrayList<>(), segmentId, onDimension, numSegments);
                 for (int bucketNumber : bucketNumbers) {
                     bucketAssignments.add(new Tuple2<>(bucketNumber, Collections.singletonList(s._2)));
                 }
@@ -419,7 +421,7 @@ public class Main {
      * @param onDimension Dimension this segment needs to be fixed at
      */
     private static void addBucketNumbersForIdAlongDimension(List<Integer> buckets, List<Integer> segments,
-                                                            int segmentId, int onDimension) {
+                                                            int segmentId, int onDimension, int numSegments) {
         if (segments.size() == dimensions) {
             // Segments is currently a valid combination of segments
             // Compute bucket number
@@ -441,7 +443,7 @@ public class Main {
                 // We're at the dimension that this segment needs to be at, so only add that one
                 List<Integer> segmentsCopy = new ArrayList<>(segments);
                 segmentsCopy.add(segmentId);
-                addBucketNumbersForIdAlongDimension(buckets, segmentsCopy, segmentId, onDimension);
+                addBucketNumbersForIdAlongDimension(buckets, segmentsCopy, segmentId, onDimension, numSegments);
             } else {
                 // Add all segments as an option for this dimension, but only the ones that are at least as high
                 // as the previous one (including equal) and ensure that if we are not yet at the dimension that needs
@@ -451,7 +453,7 @@ public class Main {
                 for (int seg = firstSegment; seg <= lastSegment; seg++) {
                     List<Integer> segmentsCopy = new ArrayList<>(segments);
                     segmentsCopy.add(seg);
-                    addBucketNumbersForIdAlongDimension(buckets, segmentsCopy, segmentId, onDimension);
+                    addBucketNumbersForIdAlongDimension(buckets, segmentsCopy, segmentId, onDimension, numSegments);
                 }
             }
         }
@@ -470,7 +472,8 @@ public class Main {
             JavaPairRDD<Integer, List<List<Tuple2<String, List<Double>>>>> buckets,
             CorrelationFunction correlationFunction,
             AggregationFunction aggregationFunction,
-            boolean reduceDimensionality
+            boolean reduceDimensionality,
+            int numSegments
     ) {
         return buckets.flatMapToPair(s -> {
             List<Tuple2<List<String>, Double>> out = new ArrayList();
@@ -479,7 +482,8 @@ public class Main {
                     s._2,
                     correlationFunction,
                     aggregationFunction,
-                    reduceDimensionality
+                    reduceDimensionality,
+                    numSegments
             );
             // Add to out list
             queue.foreach(item -> {
@@ -506,7 +510,7 @@ public class Main {
             List<List<Tuple2<String, List<Double>>>> toAllCombinationsOfThese,
             CorrelationFunction correlationFunction,
             AggregationFunction aggregationFunction,
-            boolean reduceDimensionality) {
+            boolean reduceDimensionality, int numSegments) {
         BoundedPriorityQueue<Tuple2<List<String>, Double>> out = new BoundedPriorityQueue(nTopBottom, new OrderingDescending());
         // NB: No double comparisons are done, nor against itself
 
@@ -540,10 +544,10 @@ public class Main {
             // Recurse further by taking off another dimension (which is 1 segment)
             List<Tuple2<String, List<Double>>> segment = toAllCombinationsOfThese.get(0);
             toAllCombinationsOfThese.remove(segment);
-            int segmentId = getSegNumber(segment.get(0)._1);
+            int segmentId = getSegNumber(segment.get(0)._1, numSegments);
             List<String> namesInSameSegment = compareThese.stream()
                     .map(stock -> stock._1) // Get the names of the already selected stocks
-                    .filter(name -> getSegNumber(name) == segmentId) // Only take the names that originate from same seg
+                    .filter(name -> getSegNumber(name, numSegments) == segmentId) // Only take the names that originate from same seg
                     .collect(Collectors.toList()); // Collect those names
             for (Tuple2<String, List<Double>> stock : segment) {
                 // If the to be considered segment is the same segment as the last segment,
@@ -552,7 +556,7 @@ public class Main {
                 if (namesInSameSegment.stream().allMatch(name -> name.compareTo(stock._1) < 0)) {
                     compareThese.add(stock);
                     out.$plus$plus$eq(compareAllPairs(compareThese, toAllCombinationsOfThese, correlationFunction,
-                            aggregationFunction, reduceDimensionality));
+                            aggregationFunction, reduceDimensionality, numSegments));
                     compareThese.remove(stock);
                 }
             }
@@ -768,7 +772,7 @@ public class Main {
         String masterNode = config.getProperty("master_node");
         String sparkDriver = config.getProperty("spark_driver");
         int minPartitions = Integer.parseInt(config.getProperty("min_partitions"));
-        numSegments = Integer.parseInt(config.getProperty("num_segments"));
+        int numSegments = Integer.parseInt(config.getProperty("num_segments"));
         server = Boolean.parseBoolean(config.getProperty("server"));
         String source = config.getProperty("data_match"); // only considers stocks that contain `source` as a sub-string
         Date start_date = format.parse(config.getProperty("start_date"));
@@ -783,7 +787,7 @@ public class Main {
         double totalCorrelationThreshold = Double.parseDouble(config.getProperty("threshold_total_correlation"));
 
         // Run the logic
-        new Main(path, outputPath, source, start_date, end_date, masterNode, sparkDriver, minPartitions,
+        new Main(path, outputPath, source, start_date, end_date, masterNode, sparkDriver, minPartitions, numSegments,
                 exclusions, nSamples, seed,
                 pearsonThreshold, mutualInformationThreshold, totalCorrelationThreshold);
     }
