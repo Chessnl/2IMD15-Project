@@ -40,9 +40,6 @@ public class Main {
     private static final boolean DEBUGGING = false;
     final private SparkSession sparkSession;
 
-    // Settings
-    private static int dimensions;
-
     // Choose a correlation function
     private final CorrelationFunction pearsonCorrelationFunction;
     private final CorrelationFunction mutualInformationFunction;
@@ -60,7 +57,7 @@ public class Main {
 
     Main(String path, String outputPath, String source, Date start_date, Date end_date,
          String masterNode, String sparkDriver,
-         int minPartitions, int numSegments, boolean server, String[] exclusions, int nSamples, long seed, int nTopBottom,
+         int minPartitions, int numSegments, boolean server, String[] exclusions, int nSamples, long seed, int nTopBottom, int dimensions,
          double pearsonThreshold, double mutualInformationThreshold, double totalCorrelationThreshold
      ) {
         // Set correlation functions with tresholds
@@ -100,7 +97,7 @@ public class Main {
 
         // Compute the buckets
         JavaPairRDD<Integer, List<List<Tuple2<String, List<Double>>>>> buckets =
-                computeBuckets(timeSeries, numSegments);
+                computeBuckets(timeSeries, numSegments, dimensions);
 
         // Compute the PearsonCorrelation Function
         JavaPairRDD<List<String>, Double> pearsonCorrelations = calculateCorrelations(
@@ -368,7 +365,7 @@ public class Main {
      * @return
      */
     private JavaPairRDD<Integer, List<List<Tuple2<String, List<Double>>>>> computeBuckets(
-            JavaPairRDD<String, List<Double>> timeSeries, int numSegments
+            JavaPairRDD<String, List<Double>> timeSeries, int numSegments, int dimensions
     ) {
 
         JavaPairRDD<Integer, List<Tuple2<String, List<Double>>>> segments = timeSeries
@@ -391,7 +388,7 @@ public class Main {
             for (int onDimension = 0; onDimension < dimensions; onDimension++) { // For every axis this stock is along
                 // Add it to all values for the other dimensions
                 List<Integer> bucketNumbers = new ArrayList<>();
-                addBucketNumbersForIdAlongDimension(bucketNumbers, new ArrayList<>(), segmentId, onDimension, numSegments);
+                addBucketNumbersForIdAlongDimension(bucketNumbers, new ArrayList<>(), segmentId, onDimension, numSegments, dimensions);
                 for (int bucketNumber : bucketNumbers) {
                     bucketAssignments.add(new Tuple2<>(bucketNumber, Collections.singletonList(s._2)));
                 }
@@ -422,7 +419,7 @@ public class Main {
      * @param onDimension Dimension this segment needs to be fixed at
      */
     private static void addBucketNumbersForIdAlongDimension(List<Integer> buckets, List<Integer> segments,
-                                                            int segmentId, int onDimension, int numSegments) {
+                                                            int segmentId, int onDimension, int numSegments, int dimensions) {
         if (segments.size() == dimensions) {
             // Segments is currently a valid combination of segments
             // Compute bucket number
@@ -444,7 +441,7 @@ public class Main {
                 // We're at the dimension that this segment needs to be at, so only add that one
                 List<Integer> segmentsCopy = new ArrayList<>(segments);
                 segmentsCopy.add(segmentId);
-                addBucketNumbersForIdAlongDimension(buckets, segmentsCopy, segmentId, onDimension, numSegments);
+                addBucketNumbersForIdAlongDimension(buckets, segmentsCopy, segmentId, onDimension, numSegments, dimensions);
             } else {
                 // Add all segments as an option for this dimension, but only the ones that are at least as high
                 // as the previous one (including equal) and ensure that if we are not yet at the dimension that needs
@@ -454,7 +451,7 @@ public class Main {
                 for (int seg = firstSegment; seg <= lastSegment; seg++) {
                     List<Integer> segmentsCopy = new ArrayList<>(segments);
                     segmentsCopy.add(seg);
-                    addBucketNumbersForIdAlongDimension(buckets, segmentsCopy, segmentId, onDimension, numSegments);
+                    addBucketNumbersForIdAlongDimension(buckets, segmentsCopy, segmentId, onDimension, numSegments, dimensions);
                 }
             }
         }
@@ -782,7 +779,7 @@ public class Main {
         String source = config.getProperty("data_match"); // only considers stocks that contain `source` as a sub-string
         Date start_date = format.parse(config.getProperty("start_date"));
         Date end_date = format.parse(config.getProperty("end_date"));
-        dimensions = Integer.parseInt(config.getProperty("dimensions"));
+        int dimensions = Integer.parseInt(config.getProperty("dimensions"));
         String[] exclusions = config.getProperty("exclusions").split(",");
         int nTopBottom = Integer.parseInt(config.getProperty("n_top_bottom_stocks"));
         int nSamples = Integer.parseInt(config.getProperty("n_stock_samples"));
@@ -793,7 +790,7 @@ public class Main {
 
         // Run the logic
         new Main(path, outputPath, source, start_date, end_date, masterNode, sparkDriver, minPartitions, numSegments,
-                server, exclusions, nSamples, seed, nTopBottom,
+                server, exclusions, nSamples, seed, nTopBottom, dimensions,
                 pearsonThreshold, mutualInformationThreshold, totalCorrelationThreshold);
     }
 }
