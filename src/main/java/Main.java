@@ -524,11 +524,13 @@ public class Main {
                         reduceDimensionality(compareThese, aggregationFunction) :
                         Collections.singletonList(aggregationFunction.aggregate(compareThese));
 
-                // Calculate correlation
-                double correlation = correlationFunction.getCorrelation(aggregated);
-                // Only add tuples that have a correlation above a certain treshold
-                if (correlation > correlationFunction.getThreshold()) {
-                    out.$plus$eq(new Tuple2<>(stockNames, correlation));
+                // Calculate correlations
+                for (List<Tuple2<String, List<Double>>> comparePair : aggregated) {
+                    double correlation = correlationFunction.getCorrelation(comparePair);
+                    // Only add tuples that have a correlation above a certain threshold
+                    if (correlation > correlationFunction.getThreshold()) {
+                        out.$plus$eq(new Tuple2<>(stockNames, correlation));
+                    }
                 }
             } else {
                 throw new IllegalStateException("A stock (not segment) combination for correlation calculation " +
