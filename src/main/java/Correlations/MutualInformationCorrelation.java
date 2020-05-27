@@ -1,13 +1,15 @@
 package Correlations;
 
-import scala.Serializable;
 import scala.Tuple2;
 
-import java.util.Date;
 import java.util.Iterator;
 import java.util.List;
 
-public class MutualInformationCorrelation implements CorrelationFunction, Serializable {
+public class MutualInformationCorrelation extends CorrelationFunction {
+
+    public MutualInformationCorrelation(double treshold) {
+        super(treshold);
+    }
 
     @Override
     public double getCorrelation(List<Tuple2<String, List<Double>>> stocks) {

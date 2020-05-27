@@ -15,7 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class MutualInformationCorrelationTest {
 
-    private final CorrelationFunction correl = new MutualInformationCorrelation();
+    private final CorrelationFunction correl = new MutualInformationCorrelation(0.);
 
     @Test
     void test1(){

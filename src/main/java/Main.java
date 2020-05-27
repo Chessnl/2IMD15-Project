@@ -7,6 +7,7 @@ import org.apache.commons.collections.ListUtils;
 import org.apache.spark.SparkConf;
 import org.apache.spark.api.java.JavaPairRDD;
 import org.apache.spark.sql.SparkSession;
+import org.apache.spark.util.BoundedPriorityQueue;
 import org.jfree.chart.ChartFactory;
 import org.jfree.chart.ChartPanel;
 import org.jfree.chart.JFreeChart;
@@ -22,6 +23,7 @@ import scala.Tuple6;
 import javax.swing.*;
 import java.awt.*;
 import java.io.FileInputStream;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
@@ -39,14 +41,15 @@ public class Main {
     final private SparkSession sparkSession;
 
     // Settings
+    private static int nTopBottom;
     private static int numSegments;
     private static int dimensions;
     private static boolean server;
 
     // Choose a correlation function
-    private final CorrelationFunction pearsonCorrelationFunction = new PearsonCorrelation();
-    private final CorrelationFunction mutualInformationFunction = new MutualInformationCorrelation();
-    private final CorrelationFunction totalCorrelationFunction = new TotalCorrelation();
+    private final CorrelationFunction pearsonCorrelationFunction;
+    private final CorrelationFunction mutualInformationFunction;
+    private final CorrelationFunction totalCorrelationFunction;
 
     // Choose an aggregation function
     private final AggregationFunction averageAggregationFunction = new AverageAggregation();
@@ -60,7 +63,13 @@ public class Main {
 
     Main(String path, String outputPath, String source, Date start_date, Date end_date,
          String masterNode, String sparkDriver,
-         int minPartitions, String[] exclusions) {
+         int minPartitions, String[] exclusions, int nSamples, long seed,
+         double pearsonThreshold, double mutualInformationThreshold, double totalCorrelationThreshold
+     ) {
+        // Set correlation functions with tresholds
+          pearsonCorrelationFunction = new PearsonCorrelation(pearsonThreshold);
+          mutualInformationFunction = new MutualInformationCorrelation(mutualInformationThreshold);
+          totalCorrelationFunction = new TotalCorrelation(totalCorrelationThreshold);
 
         // Define a new output folder based on date and time and copy the current config to it
         String outputFolder = "out_" + new SimpleDateFormat("yyyy-MM-dd_HH-mm-ss").format(new Date());
@@ -103,7 +112,7 @@ public class Main {
                 normalThenAverageAggregationFunction,
                 true
         );
-        saveCorrelationResultsToFile(pearsonCorrelations, "Pearson", outputPath, outputFolder);
+        saveCorrelationResultsToFile(pearsonCorrelations, "Pearson", outputPath, outputFolder, nTopBottom, nSamples, seed);
 
         // Compute the MutualInformation correlation
         JavaPairRDD<List<String>, Double> mutualCorrelations = calculateCorrelations(
@@ -112,7 +121,7 @@ public class Main {
                 averageAggregationFunction,
                 true
         );
-        saveCorrelationResultsToFile(mutualCorrelations, "MutualInformation", outputPath, outputFolder);
+        saveCorrelationResultsToFile(mutualCorrelations, "MutualInformation", outputPath, outputFolder, nTopBottom, nSamples, seed);
 
         // Compute the TotalCorrelation
         JavaPairRDD<List<String>, Double> totalCorrelation = calculateCorrelations(
@@ -121,7 +130,7 @@ public class Main {
                 identityAggregationFunction,
                 false
         );
-        saveCorrelationResultsToFile(totalCorrelation, "TotalCorrelation", outputPath, outputFolder);
+        saveCorrelationResultsToFile(totalCorrelation, "TotalCorrelation", outputPath, outputFolder, nTopBottom, nSamples, seed);
 
         sparkSession.stop();
     }
@@ -463,14 +472,23 @@ public class Main {
             AggregationFunction aggregationFunction,
             boolean reduceDimensionality
     ) {
-        return buckets.flatMapToPair(s ->
-                compareAllPairs(
-                        new ArrayList<>(),
-                        s._2,
-                        correlationFunction,
-                        aggregationFunction,
-                        reduceDimensionality
-                ).iterator());
+        return buckets.flatMapToPair(s -> {
+            List<Tuple2<List<String>, Double>> out = new ArrayList();
+            BoundedPriorityQueue<Tuple2<List<String>, Double>> queue = compareAllPairs(
+                    new ArrayList<>(),
+                    s._2,
+                    correlationFunction,
+                    aggregationFunction,
+                    reduceDimensionality
+            );
+            // Add to out list
+            queue.foreach(item -> {
+                out.add(item);
+                return item;
+            });
+            // Result
+            return out.iterator();
+        });
     }
 
     /**
@@ -483,13 +501,13 @@ public class Main {
      * @param reduceDimensionality
      * @return List of all correlations on all combinations
      */
-    private static List<Tuple2<List<String>, Double>> compareAllPairs(
+    private static BoundedPriorityQueue<Tuple2<List<String>, Double>> compareAllPairs(
             List<Tuple2<String, List<Double>>> compareThese,
             List<List<Tuple2<String, List<Double>>>> toAllCombinationsOfThese,
             CorrelationFunction correlationFunction,
             AggregationFunction aggregationFunction,
             boolean reduceDimensionality) {
-        List<Tuple2<List<String>, Double>> out = new ArrayList<>();
+        BoundedPriorityQueue<Tuple2<List<String>, Double>> out = new BoundedPriorityQueue(nTopBottom, new OrderingDescending());
         // NB: No double comparisons are done, nor against itself
 
         if (toAllCombinationsOfThese.isEmpty()) {
@@ -506,12 +524,14 @@ public class Main {
                         reduceDimensionality(compareThese, aggregationFunction) :
                         Collections.singletonList(aggregationFunction.aggregate(compareThese));
 
-                // Calculate correlation
-                for (List<Tuple2<String, List<Double>>> correlationPair : aggregated) {
-                    double correlation = correlationFunction.getCorrelation(correlationPair);
-                    out.add(new Tuple2<>(stockNames, correlation));
+                // Calculate correlations
+                for (List<Tuple2<String, List<Double>>> comparePair : aggregated) {
+                    double correlation = correlationFunction.getCorrelation(comparePair);
+                    // Only add tuples that have a correlation above a certain threshold
+                    if (correlation > correlationFunction.getThreshold()) {
+                        out.$plus$eq(new Tuple2<>(stockNames, correlation));
+                    }
                 }
-
             } else {
                 throw new IllegalStateException("A stock (not segment) combination for correlation calculation " +
                         "contained duplicates: " + stockNames);
@@ -531,7 +551,7 @@ public class Main {
                 // regardless of order (so only 123, not also 132)
                 if (namesInSameSegment.stream().allMatch(name -> name.compareTo(stock._1) < 0)) {
                     compareThese.add(stock);
-                    out.addAll(compareAllPairs(compareThese, toAllCombinationsOfThese, correlationFunction,
+                    out.$plus$plus$eq(compareAllPairs(compareThese, toAllCombinationsOfThese, correlationFunction,
                             aggregationFunction, reduceDimensionality));
                     compareThese.remove(stock);
                 }
@@ -584,26 +604,70 @@ public class Main {
      * @param outputFolder
      */
     private void saveCorrelationResultsToFile(JavaPairRDD<List<String>, Double> result,
-                                              String name, String outputPath, String outputFolder
+        String name,String outputPath, String outputFolder, int nTopBottom, int nSamplePercentage, long seed
     ) {
-        if (server) {
-            // On the server do not coalesce and do not use java Paths to support hdfs
-            result.saveAsTextFile(outputPath + outputFolder + name);
-        } else {
-            // On a local system coalesce before writing to file
-            result.coalesce(1).saveAsTextFile(
-                    Paths.get(outputPath, outputFolder, name).toUri().getPath());
+        // Extract top and bottom nSamplePercentage
+        if (nTopBottom > 0) {
+            scala.collection.immutable.List<Tuple2<List<String>, Double>> top = filterHighestCorrelations(result, nTopBottom).toList();
+            outputListToFile(top, name, outputPath, outputFolder, "-top" + nTopBottom);
+        }
+        // Extract a percentage of the data via sampling
+        // TODO Delete if not to be used anymore
+//        if (server) {
+//            if (nSamplePercentage < 100) {
+//                result.sample(false, nSamplePercentage / 100f, seed).saveAsTextFile(
+//                        outputPath + outputFolder + name + "-sampling-" + nSamplePercentage);
+//            } else {
+//                result.saveAsTextFile(outputPath + outputFolder + name);
+//            }
+//        } else {
+//            if (nSamplePercentage < 100) {
+//                result.sample(false, nSamplePercentage / 100f, seed).coalesce(1).saveAsTextFile(
+//                        Paths.get(outputPath, outputFolder, name + "-sampling-" + nSamplePercentage).toUri().getPath());
+//            } else {
+//                result.coalesce(1).saveAsTextFile(Paths.get(outputPath, outputFolder, name).toUri().getPath());
+//            }
+//        }
+    }
+
+    private void outputListToFile(scala.collection.immutable.List<Tuple2<List<String>,Double>> result,
+        String name, String outputPath, String outputFolder, String extension
+    ) {
+        try {
+            FileWriter writer;
+            if (server)
+                writer = new FileWriter(outputPath + outputFolder + name + extension);
+            else
+                writer = new FileWriter(Paths.get(outputPath, outputFolder, name).toUri().getPath() + extension);
+
+            result.foreach(item -> {
+                String stocks = String.join(",", item._1);
+                try {
+                    writer.write("(" + stocks + ")," + item._2 + System.lineSeparator());
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+                return item;
+            });
+            writer.close();
+        } catch (Exception e) {
+
         }
     }
 
-    private JavaPairRDD<List<String>, Double> filterHighCorrelations(JavaPairRDD<List<String>, Double> correlations) {
+    @SuppressWarnings("UnstableApiUsage")
+    private static BoundedPriorityQueue<Tuple2<List<String>, Double>> filterHighestCorrelations(JavaPairRDD<List<String>, Double> correlations, int nTopBottom) {
         // TODO Filter out the combinations that have a high correlation only
+        BoundedPriorityQueue<Tuple2<List<String>, Double>> res = new BoundedPriorityQueue(nTopBottom, new OrderingDescending());
 
-        return correlations.filter(correlation -> {
-            double value = correlation._2;
-            double threshold = -Double.MAX_VALUE; // TODO refine
-            return value > threshold;
-        });
+        return correlations.aggregate(res,
+                (queue, newValue) -> {
+                    queue.$plus$eq(newValue);
+                    return queue;
+                }, (s, t) -> {
+                    s.$plus$plus$eq(t);
+                    return s;
+                });
     }
 
     /**
@@ -689,6 +753,12 @@ public class Main {
         System.out.println("Using end date: " + config.getProperty("end_date"));
         System.out.println("Comparing on #dimensions: " + config.getProperty("dimensions"));
         System.out.println("Excluding files with keywords: " + config.getProperty("exclusions"));
+        System.out.println("Saving top and bottom n samples: " + config.getProperty("n_top_bottom_stocks"));
+        System.out.println("Saving n random samples (percentage 0-100): " + config.getProperty("n_stock_samples"));
+        System.out.println("Random sampling seed: " + config.getProperty("sampling_seed"));
+        System.out.println("Pearson threshold: " + config.get("threshold_pearson"));
+        System.out.println("Mutual Information threshold: " + config.get("threshold_mutual_information"));
+        System.out.println("Total Correlation threshold: " + config.get("threshold_total_correlation"));
 
         // Parse the config
         SimpleDateFormat format = new SimpleDateFormat(DATE_FORMAT);
@@ -705,8 +775,16 @@ public class Main {
         Date end_date = format.parse(config.getProperty("end_date"));
         dimensions = Integer.parseInt(config.getProperty("dimensions"));
         String[] exclusions = config.getProperty("exclusions").split(",");
+        nTopBottom = Integer.parseInt(config.getProperty("n_top_bottom_stocks"));
+        int nSamples = Integer.parseInt(config.getProperty("n_stock_samples"));
+        long seed = Integer.parseInt(config.getProperty("sampling_seed"));
+        double pearsonThreshold = Double.parseDouble(config.getProperty("threshold_pearson"));
+        double mutualInformationThreshold = Double.parseDouble(config.getProperty("threshold_mutual_information"));
+        double totalCorrelationThreshold = Double.parseDouble(config.getProperty("threshold_total_correlation"));
 
         // Run the logic
-        new Main(path, outputPath, source, start_date, end_date, masterNode, sparkDriver, minPartitions, exclusions);
+        new Main(path, outputPath, source, start_date, end_date, masterNode, sparkDriver, minPartitions,
+                exclusions, nSamples, seed,
+                pearsonThreshold, mutualInformationThreshold, totalCorrelationThreshold);
     }
 }
