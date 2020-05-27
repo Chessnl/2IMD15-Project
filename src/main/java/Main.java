@@ -118,7 +118,7 @@ public class Main {
         JavaPairRDD<List<String>, Double> mutualCorrelations = calculateCorrelations(
                 buckets,
                 mutualInformationFunction,
-                averageAggregationFunction,
+                normalThenAverageAggregationFunction,
                 true
         );
         saveCorrelationResultsToFile(mutualCorrelations, "MutualInformation", outputPath, outputFolder, nTopBottom, nSamples, seed);
