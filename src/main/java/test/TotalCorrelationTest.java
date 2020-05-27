@@ -12,7 +12,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class TotalCorrelationTest {
 
-    private final TotalCorrelation correl = new TotalCorrelation();
+    private final TotalCorrelation correl = new TotalCorrelation(0.);
 
     @Test
     void test1(){

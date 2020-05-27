@@ -3,7 +3,6 @@ import Correlations.CorrelationFunction;
 import Correlations.MutualInformationCorrelation;
 import Correlations.PearsonCorrelation;
 import Correlations.TotalCorrelation;
-import com.google.common.collect.MinMaxPriorityQueue;
 import org.apache.commons.collections.ListUtils;
 import org.apache.spark.SparkConf;
 import org.apache.spark.api.java.JavaPairRDD;
@@ -20,8 +19,6 @@ import org.jfree.data.xy.XYSeries;
 import org.jfree.data.xy.XYSeriesCollection;
 import scala.Tuple2;
 import scala.Tuple6;
-import scala.math.Ordering;
-import scala.math.PartialOrdering;
 
 import javax.swing.*;
 import java.awt.*;
@@ -49,9 +46,9 @@ public class Main {
     private static boolean server;
 
     // Choose a correlation function
-    private final CorrelationFunction pearsonCorrelationFunction = new PearsonCorrelation();
-    private final CorrelationFunction mutualInformationFunction = new MutualInformationCorrelation();
-    private final CorrelationFunction totalCorrelationFunction = new TotalCorrelation();
+    private final CorrelationFunction pearsonCorrelationFunction;
+    private final CorrelationFunction mutualInformationFunction;
+    private final CorrelationFunction totalCorrelationFunction;
 
     // Choose an aggregation function
     private final AggregationFunction averageAggregationFunction = new AverageAggregation();
@@ -65,8 +62,13 @@ public class Main {
 
     Main(String path, String outputPath, String source, Date start_date, Date end_date,
          String masterNode, String sparkDriver,
-         int minPartitions, String[] exclusions, int nTopBottom, int nSamples, long seed
+         int minPartitions, String[] exclusions, int nTopBottom, int nSamples, long seed,
+         double pearsonThreshold, double mutualInformationThreshold, double totalCorrelationThreshold
      ) {
+        // Set correlation functions with tresholds
+          pearsonCorrelationFunction = new PearsonCorrelation(pearsonThreshold);
+          mutualInformationFunction = new MutualInformationCorrelation(mutualInformationThreshold);
+          totalCorrelationFunction = new TotalCorrelation(totalCorrelationThreshold);
 
         // Define a new output folder based on date and time and copy the current config to it
         String outputFolder = "out_" + new SimpleDateFormat("yyyy-MM-dd_HH-mm-ss").format(new Date());
@@ -517,7 +519,10 @@ public class Main {
                 // Calculate correlation
                 double correlation = correlationFunction.getCorrelation(aggregated);
 
-                out.add(new Tuple2<>(stockNames, correlation));
+                // Only add tuples that have a correlation above a certain treshold
+                if (correlation > correlationFunction.getThreshold()) {
+                    out.add(new Tuple2<>(stockNames, correlation));
+                }
             } else {
                 throw new IllegalStateException("A stock (not segment) combination for correlation calculation " +
                         "contained duplicates: " + stockNames);
@@ -732,6 +737,9 @@ public class Main {
         System.out.println("Saving top and bottom n samples: " + config.getProperty("n_top_bottom_stocks"));
         System.out.println("Saving n random samples (percentage 0-100): " + config.getProperty("n_stock_samples"));
         System.out.println("Random sampling seed: " + config.getProperty("sampling_seed"));
+        System.out.println("Pearson threshold: " + config.get("threshold_pearson"));
+        System.out.println("Mutual Information threshold: " + config.get("threshold_mutual_information"));
+        System.out.println("Total Correlation threshold: " + config.get("threshold_total_correlation"));
 
         // Parse the config
         SimpleDateFormat format = new SimpleDateFormat(DATE_FORMAT);
@@ -751,9 +759,13 @@ public class Main {
         int nTopBottom = Integer.parseInt(config.getProperty("n_top_bottom_stocks"));
         int nSamples = Integer.parseInt(config.getProperty("n_stock_samples"));
         long seed = Integer.parseInt(config.getProperty("sampling_seed"));
+        double pearsonThreshold = Double.parseDouble(config.getProperty("threshold_pearson"));
+        double mutualInformationThreshold = Double.parseDouble(config.getProperty("threshold_mutual_information"));
+        double totalCorrelationThreshold = Double.parseDouble(config.getProperty("threshold_total_correlation"));
 
         // Run the logic
         new Main(path, outputPath, source, start_date, end_date, masterNode, sparkDriver, minPartitions,
-                exclusions, nTopBottom, nSamples, seed);
+                exclusions, nTopBottom, nSamples, seed,
+                pearsonThreshold, mutualInformationThreshold, totalCorrelationThreshold);
     }
 }

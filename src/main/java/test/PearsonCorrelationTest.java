@@ -14,7 +14,7 @@ import java.util.List;
 
 class PearsonCorrelationTest {
 
-    private final CorrelationFunction correl = new PearsonCorrelation();
+    private final CorrelationFunction correl = new PearsonCorrelation(0.);
 
     @Test
     void test1() {

@@ -6,9 +6,13 @@ import scala.Tuple2;
 import java.util.HashMap;
 import java.util.List;
 
-public class TotalCorrelation implements CorrelationFunction {
+public class TotalCorrelation extends CorrelationFunction {
 
     private final int NUM_BUCKETS = 20;
+
+    public TotalCorrelation(double treshold) {
+        super(treshold);
+    }
 
 
     public double getCorrelation(List<Tuple2<String, List<Double>>> stocks) {

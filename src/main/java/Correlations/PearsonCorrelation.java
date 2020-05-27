@@ -7,7 +7,12 @@ import java.util.Iterator;
 import java.util.List;
 import java.lang.Math;
 
-public class PearsonCorrelation implements CorrelationFunction {
+public class PearsonCorrelation extends CorrelationFunction {
+
+    public PearsonCorrelation(double treshold) {
+        super(treshold);
+    }
+
     @Override
     public double getCorrelation(List<Tuple2<String, List<Double>>> stocks) {
         if (stocks.size() != 2) throw new IllegalArgumentException(
