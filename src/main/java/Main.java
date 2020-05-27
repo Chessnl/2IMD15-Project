@@ -43,7 +43,6 @@ public class Main {
     // Settings
     private static int nTopBottom;
     private static int dimensions;
-    private static boolean server;
 
     // Choose a correlation function
     private final CorrelationFunction pearsonCorrelationFunction;
@@ -62,7 +61,7 @@ public class Main {
 
     Main(String path, String outputPath, String source, Date start_date, Date end_date,
          String masterNode, String sparkDriver,
-         int minPartitions, int numSegments, String[] exclusions, int nSamples, long seed,
+         int minPartitions, int numSegments, boolean server, String[] exclusions, int nSamples, long seed,
          double pearsonThreshold, double mutualInformationThreshold, double totalCorrelationThreshold
      ) {
         // Set correlation functions with tresholds
@@ -74,7 +73,7 @@ public class Main {
         String outputFolder = "out_" + new SimpleDateFormat("yyyy-MM-dd_HH-mm-ss").format(new Date());
 
         // Copy config to output folder
-        copyConfig(outputPath, outputFolder);
+        copyConfig(outputPath, outputFolder, server);
 
         // Create sparkSession
         if (server) {
@@ -112,7 +111,7 @@ public class Main {
                 true,
                 numSegments
         );
-        saveCorrelationResultsToFile(pearsonCorrelations, "Pearson", outputPath, outputFolder, nTopBottom, nSamples, seed);
+        saveCorrelationResultsToFile(pearsonCorrelations, "Pearson", outputPath, outputFolder, nTopBottom, nSamples, seed, server);
 
         // Compute the MutualInformation correlation
         JavaPairRDD<List<String>, Double> mutualCorrelations = calculateCorrelations(
@@ -122,7 +121,7 @@ public class Main {
                 true,
                 numSegments
         );
-        saveCorrelationResultsToFile(mutualCorrelations, "MutualInformation", outputPath, outputFolder, nTopBottom, nSamples, seed);
+        saveCorrelationResultsToFile(mutualCorrelations, "MutualInformation", outputPath, outputFolder, nTopBottom, nSamples, seed, server);
 
         // Compute the TotalCorrelation
         JavaPairRDD<List<String>, Double> totalCorrelation = calculateCorrelations(
@@ -132,7 +131,7 @@ public class Main {
                 false,
                 numSegments
         );
-        saveCorrelationResultsToFile(totalCorrelation, "TotalCorrelation", outputPath, outputFolder, nTopBottom, nSamples, seed);
+        saveCorrelationResultsToFile(totalCorrelation, "TotalCorrelation", outputPath, outputFolder, nTopBottom, nSamples, seed, server);
 
         sparkSession.stop();
     }
@@ -142,7 +141,7 @@ public class Main {
      *
      * @param outputPath
      */
-    private static void copyConfig(String outputPath, String outputFolder) {
+    private static void copyConfig(String outputPath, String outputFolder, boolean server) {
         if (!server) {
             try {
                 Files.createDirectories(Paths.get(outputPath, outputFolder));
@@ -608,12 +607,12 @@ public class Main {
      * @param outputFolder
      */
     private void saveCorrelationResultsToFile(JavaPairRDD<List<String>, Double> result,
-        String name,String outputPath, String outputFolder, int nTopBottom, int nSamplePercentage, long seed
+        String name, String outputPath, String outputFolder, int nTopBottom, int nSamplePercentage, long seed, boolean server
     ) {
         // Extract top and bottom nSamplePercentage
         if (nTopBottom > 0) {
             scala.collection.immutable.List<Tuple2<List<String>, Double>> top = filterHighestCorrelations(result, nTopBottom).toList();
-            outputListToFile(top, name, outputPath, outputFolder, "-top" + nTopBottom);
+            outputListToFile(top, name, outputPath, outputFolder, "-top" + nTopBottom, server);
         }
         // Extract a percentage of the data via sampling
         // TODO Delete if not to be used anymore
@@ -635,7 +634,7 @@ public class Main {
     }
 
     private void outputListToFile(scala.collection.immutable.List<Tuple2<List<String>,Double>> result,
-        String name, String outputPath, String outputFolder, String extension
+        String name, String outputPath, String outputFolder, String extension, boolean server
     ) {
         try {
             FileWriter writer;
@@ -773,7 +772,7 @@ public class Main {
         String sparkDriver = config.getProperty("spark_driver");
         int minPartitions = Integer.parseInt(config.getProperty("min_partitions"));
         int numSegments = Integer.parseInt(config.getProperty("num_segments"));
-        server = Boolean.parseBoolean(config.getProperty("server"));
+        boolean server = Boolean.parseBoolean(config.getProperty("server"));
         String source = config.getProperty("data_match"); // only considers stocks that contain `source` as a sub-string
         Date start_date = format.parse(config.getProperty("start_date"));
         Date end_date = format.parse(config.getProperty("end_date"));
@@ -788,7 +787,7 @@ public class Main {
 
         // Run the logic
         new Main(path, outputPath, source, start_date, end_date, masterNode, sparkDriver, minPartitions, numSegments,
-                exclusions, nSamples, seed,
+                server, exclusions, nSamples, seed,
                 pearsonThreshold, mutualInformationThreshold, totalCorrelationThreshold);
     }
 }
