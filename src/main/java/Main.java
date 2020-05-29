@@ -58,7 +58,7 @@ public class Main {
 
     Main(String path, String outputPath, String source, Date start_date, Date end_date,
          String masterNode, String sparkDriver,
-         int minPartitions, int numSegments, boolean server, String[] exclusions, int nSamples, long seed, int nTopBottom, int dimensions,
+         int minPartitions, int numSegments, boolean server, String[] exclusions, int nTopBottom, int dimensions,
          double pearsonThreshold, double mutualInformationThreshold, double totalCorrelationThreshold
      ) {
         // Set correlation functions with tresholds
@@ -109,7 +109,7 @@ public class Main {
                 numSegments,
                 nTopBottom
         );
-        saveCorrelationResultsToFile(pearsonCorrelations, "Pearson", outputPath, outputFolder, nTopBottom, nSamples, seed, server);
+        saveCorrelationResultsToFile(pearsonCorrelations, "Pearson", outputPath, outputFolder, nTopBottom, server);
 
         // Compute the MutualInformation correlation
         JavaPairRDD<List<String>, Double> mutualCorrelations = calculateCorrelations(
@@ -120,7 +120,7 @@ public class Main {
                 numSegments,
                 nTopBottom
         );
-        saveCorrelationResultsToFile(mutualCorrelations, "MutualInformation", outputPath, outputFolder, nTopBottom, nSamples, seed, server);
+        saveCorrelationResultsToFile(mutualCorrelations, "MutualInformation", outputPath, outputFolder, nTopBottom, server);
 
         // Compute the TotalCorrelation
         JavaPairRDD<List<String>, Double> totalCorrelation = calculateCorrelations(
@@ -131,7 +131,7 @@ public class Main {
                 numSegments,
                 nTopBottom
         );
-        saveCorrelationResultsToFile(totalCorrelation, "TotalCorrelation", outputPath, outputFolder, nTopBottom, nSamples, seed, server);
+        saveCorrelationResultsToFile(totalCorrelation, "TotalCorrelation", outputPath, outputFolder, nTopBottom, server);
 
         sparkSession.stop();
     }
@@ -613,30 +613,13 @@ public class Main {
      * @param outputFolder
      */
     private void saveCorrelationResultsToFile(JavaPairRDD<List<String>, Double> result,
-        String name, String outputPath, String outputFolder, int nTopBottom, int nSamplePercentage, long seed, boolean server
+        String name, String outputPath, String outputFolder, int nTopBottom, boolean server
     ) {
         // Extract top and bottom nSamplePercentage
         if (nTopBottom > 0) {
             BoundedPriorityQueue<Tuple2<List<String>, Double>> top = filterHighestCorrelations(result, nTopBottom);
             outputListToFile(top, name, outputPath, outputFolder, "-top" + nTopBottom, server);
         }
-        // Extract a percentage of the data via sampling
-        // TODO Delete if not to be used anymore
-//        if (server) {
-//            if (nSamplePercentage < 100) {
-//                result.sample(false, nSamplePercentage / 100f, seed).saveAsTextFile(
-//                        outputPath + outputFolder + name + "-sampling-" + nSamplePercentage);
-//            } else {
-//                result.saveAsTextFile(outputPath + outputFolder + name);
-//            }
-//        } else {
-//            if (nSamplePercentage < 100) {
-//                result.sample(false, nSamplePercentage / 100f, seed).coalesce(1).saveAsTextFile(
-//                        Paths.get(outputPath, outputFolder, name + "-sampling-" + nSamplePercentage).toUri().getPath());
-//            } else {
-//                result.coalesce(1).saveAsTextFile(Paths.get(outputPath, outputFolder, name).toUri().getPath());
-//            }
-//        }
     }
 
     private void outputListToFile(BoundedPriorityQueue<Tuple2<List<String>, Double>> result,
@@ -768,8 +751,6 @@ public class Main {
         System.out.println("Comparing on #dimensions: " + config.getProperty("dimensions"));
         System.out.println("Excluding files with keywords: " + config.getProperty("exclusions"));
         System.out.println("Saving top and bottom n samples: " + config.getProperty("n_top_bottom_stocks"));
-        System.out.println("Saving n random samples (percentage 0-100): " + config.getProperty("n_stock_samples"));
-        System.out.println("Random sampling seed: " + config.getProperty("sampling_seed"));
         System.out.println("Pearson threshold: " + config.get("threshold_pearson"));
         System.out.println("Mutual Information threshold: " + config.get("threshold_mutual_information"));
         System.out.println("Total Correlation threshold: " + config.get("threshold_total_correlation"));
@@ -790,15 +771,13 @@ public class Main {
         int dimensions = Integer.parseInt(config.getProperty("dimensions"));
         String[] exclusions = config.getProperty("exclusions").split(",");
         int nTopBottom = Integer.parseInt(config.getProperty("n_top_bottom_stocks"));
-        int nSamples = Integer.parseInt(config.getProperty("n_stock_samples"));
-        long seed = Integer.parseInt(config.getProperty("sampling_seed"));
         double pearsonThreshold = Double.parseDouble(config.getProperty("threshold_pearson"));
         double mutualInformationThreshold = Double.parseDouble(config.getProperty("threshold_mutual_information"));
         double totalCorrelationThreshold = Double.parseDouble(config.getProperty("threshold_total_correlation"));
 
         // Run the logic
         new Main(path, outputPath, source, start_date, end_date, masterNode, sparkDriver, minPartitions, numSegments,
-                server, exclusions, nSamples, seed, nTopBottom, dimensions,
+                server, exclusions, nTopBottom, dimensions,
                 pearsonThreshold, mutualInformationThreshold, totalCorrelationThreshold);
     }
 }
