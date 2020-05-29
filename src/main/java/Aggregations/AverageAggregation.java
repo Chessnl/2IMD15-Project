@@ -19,7 +19,8 @@ public class AverageAggregation extends AggregationFunction {
 
     @Override
     public List<Tuple2<String, List<Double>>> singleAggregation(List<Tuple2<String, List<Double>>> in) {
-        String stockName = in.stream().map(stock -> stock._1).collect(Collectors.joining("+"));
+        String stockNames = in.stream().map(stock -> stock._1).collect(Collectors.joining(","));
+        String stockName = "AVG(" + stockNames + ")";
         Double[] prices = new Double[in.get(0)._2.size()];
         Arrays.fill(prices, 0.);
 
