@@ -536,7 +536,9 @@ public class Main {
                     double correlation = correlationFunction.getCorrelation(comparePair);
                     // Only add tuples that have a correlation above a certain threshold
                     if (correlation > correlationFunction.getThreshold()) {
-                        out.$plus$eq(new Tuple2<>(stockNames, correlation));
+                        List<String> aggregatedStockNames = comparePair.stream().map(stock -> stock._1)
+                                .collect(Collectors.toCollection(ArrayList::new));
+                        out.$plus$eq(new Tuple2<>(aggregatedStockNames, correlation));
                     }
                 }
             } else {
