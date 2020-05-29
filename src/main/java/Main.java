@@ -19,6 +19,7 @@ import org.jfree.data.xy.XYSeries;
 import org.jfree.data.xy.XYSeriesCollection;
 import scala.Tuple2;
 import scala.Tuple6;
+import scala.collection.immutable.Seq;
 
 import javax.swing.*;
 import java.awt.*;
@@ -614,7 +615,7 @@ public class Main {
     ) {
         // Extract top and bottom nSamplePercentage
         if (nTopBottom > 0) {
-            scala.collection.immutable.List<Tuple2<List<String>, Double>> top = filterHighestCorrelations(result, nTopBottom).toList();
+            BoundedPriorityQueue<Tuple2<List<String>, Double>> top = filterHighestCorrelations(result, nTopBottom);
             outputListToFile(top, name, outputPath, outputFolder, "-top" + nTopBottom, server);
         }
         // Extract a percentage of the data via sampling
@@ -636,7 +637,7 @@ public class Main {
 //        }
     }
 
-    private void outputListToFile(scala.collection.immutable.List<Tuple2<List<String>,Double>> result,
+    private void outputListToFile(BoundedPriorityQueue<Tuple2<List<String>, Double>> result,
         String name, String outputPath, String outputFolder, String extension, boolean server
     ) {
         try {
@@ -646,15 +647,20 @@ public class Main {
             else
                 writer = new FileWriter(Paths.get(outputPath, outputFolder, name).toUri().getPath() + extension);
 
-            result.foreach(item -> {
-                String stocks = String.join(",", item._1);
+            // Ensure list is sorted and then get iterator
+            scala.collection.Iterator<Tuple2<List<String>, Double> >it =
+                    ((scala.collection.immutable.List<Tuple2<List<String>, Double>>)
+                            result.toList().sorted(new OrderingAscending())).iterator();
+            // Iterate through results
+            while (it.hasNext()) {
                 try {
-                    writer.write("(" + stocks + ")," + item._2 + System.lineSeparator());
+                    Tuple2<List<String>, Double> entry = it.next();
+                    String stocks = String.join(",", entry._1);
+                    writer.write("(" + stocks + ")," + entry._2 + System.lineSeparator());
                 } catch (IOException e) {
                     e.printStackTrace();
                 }
-                return item;
-            });
+            }
             writer.close();
         } catch (Exception e) {
 
